@@ -19,9 +19,12 @@ typedef struct {
 	AudioFormat playback;
 	AudioFormat capture;
 	AudioBuffer buffer;
+	float *norm_avg; // Average normalized value for each channel
 } AudioData;
 
-static AudioData g_audio_data;
+static AudioData *g_audio_data;
+
+static ma_device device;
 
 // static double *g_audio_fft_in;
 // static double *g_audio_fft_out;
@@ -51,36 +54,34 @@ static AudioData g_audio_data;
 void proc_audio(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
 	if (frameCount == 0) return;
 
-
 	const ma_int32 *input_samples = (const ma_int32 *)pInput;
-	AudioData *audio_data = (AudioData *)pDevice->pUserData;
 
 	// Handle the copy with potential wrapping
-	for (ma_uint32 i = 0; i < audio_data->capture.channels; i++) {
+	for (ma_uint32 i = 0; i < g_audio_data->capture.channels; i++) {
 		float sum = 0.0f;
 		for (ma_uint32 j = 0; j < frameCount; j++) {
 			// Calculate the index in the circular buffer
-			size_t buffer_index = (audio_data->buffer.frames_cursor + j) % audio_data->buffer.size;
+			size_t buffer_index = (g_audio_data->buffer.frames_cursor + j) % g_audio_data->buffer.size;
 
 			// Copy the sample for this channel
-			audio_data->buffer.frames[i][buffer_index] = input_samples[i * frameCount + j];
+			g_audio_data->buffer.frames[i][buffer_index] = input_samples[i * frameCount + j];
 
-			sum += (float)audio_data->buffer.frames[i][buffer_index]/ 2147483648.0f; // Normalize to [-1.0, 1.0] range
+			sum += (float)g_audio_data->buffer.frames[i][buffer_index]/ 2147483648.0f; // Normalize to [-1.0, 1.0] range
 		}
-		// g_audio_data.norm_avg[i] = sum / (float)frameCount; // Calculate average for this channel
+		g_audio_data->norm_avg[i] = sum / (float)frameCount; // Calculate average for this channel
 		// Run FFT on the channel data
-		// run_fft(audio_data->buffer.frames[i], g_audio_fft_results[i], AUDIO_FRAMES);
+		// run_fft(g_audio_data.buffer.frames[i], g_audio_fft_results[i], AUDIO_FRAMES);
 
 	}
 
 	// Update cursor with wrapping
-	audio_data->buffer.frames_cursor = (audio_data->buffer.frames_cursor + frameCount) % audio_data->buffer.size;
+	g_audio_data->buffer.frames_cursor = (g_audio_data->buffer.frames_cursor + frameCount) % g_audio_data->buffer.size;
 
 	// Update frame count
-	if (audio_data->buffer.frames_count < audio_data->buffer.size) {
-		audio_data->buffer.frames_count += frameCount;
-		if (audio_data->buffer.frames_count > audio_data->buffer.size) {
-			audio_data->buffer.frames_count = audio_data->buffer.size;
+	if (g_audio_data->buffer.frames_count < g_audio_data->buffer.size) {
+		g_audio_data->buffer.frames_count += frameCount;
+		if (g_audio_data->buffer.frames_count > g_audio_data->buffer.size) {
+			g_audio_data->buffer.frames_count = g_audio_data->buffer.size;
 		}
 	}
 	MA_COPY_MEMORY(pOutput, pInput, frameCount * ma_get_bytes_per_frame(pDevice->capture.format, pDevice->capture.channels));
@@ -113,23 +114,52 @@ int init_audio(
 	// Audio Initialization
 	//--------------------------------------------------------------------------------------
 	
-	g_audio_data = (AudioData){
-		.playback = {playback_format, playback_channels},
-		.capture = {capture_format, capture_channels},
-		.buffer = {
-			.size = buffer_size,
-			.frames_count = 0,
-			.frames_cursor = 0,
-			.frames = (ma_int32**)malloc(sizeof(ma_int32*) * capture_channels)
+	g_audio_data = (AudioData *)malloc(sizeof(AudioData));
+	if (g_audio_data == NULL) {
+		printf("Failed to allocate memory for audio data\n");
+		return -1;
+	}
+
+	g_audio_data->capture.format = capture_format;
+	g_audio_data->capture.channels = capture_channels;
+	g_audio_data->playback.format = playback_format;
+	g_audio_data->playback.channels = playback_channels;
+	g_audio_data->buffer.size = buffer_size;
+	g_audio_data->buffer.frames_count = 0;
+	g_audio_data->buffer.frames_cursor = 0;
+	g_audio_data->buffer.frames = malloc(sizeof(ma_int32 *) * capture_channels);
+	if (g_audio_data->buffer.frames == NULL) {
+		printf("Failed to allocate memory for audio frames\n");
+		free(g_audio_data);
+		return -1;
+	}
+	for (size_t i = 0; i < capture_channels; i++) {
+		g_audio_data->buffer.frames[i] = malloc(sizeof(ma_int32) * buffer_size);
+		if (g_audio_data->buffer.frames[i] == NULL) {
+			printf("Failed to allocate memory for audio frames[%zu]\n", i);
+			for (size_t j = 0; j < i; j++) {
+				free(g_audio_data->buffer.frames[j]);
+			}
+			free(g_audio_data->buffer.frames);
+			free(g_audio_data);
+			return -1;
 		}
-	};
+	}
 
-
+	g_audio_data->norm_avg = malloc(sizeof(float) * capture_channels);
 
 	ma_result result;
 	ma_device_config deviceConfig;
-	ma_device device;
-	deviceConfig = _init_device_config(&g_audio_data);
+	deviceConfig = ma_device_config_init(ma_device_type_duplex);
+	deviceConfig.capture.pDeviceID = NULL;
+	deviceConfig.capture.format = g_audio_data->capture.format;
+	deviceConfig.capture.channels = g_audio_data->capture.channels;
+	deviceConfig.capture.shareMode = ma_share_mode_shared;
+	deviceConfig.playback.pDeviceID = NULL;
+	deviceConfig.playback.format = g_audio_data->playback.format;
+	deviceConfig.playback.channels = g_audio_data->playback.channels;
+	deviceConfig.pUserData = &g_audio_data;
+	deviceConfig.dataCallback = proc_audio;
 	result = ma_device_init(NULL, &deviceConfig, &device);
 	if (result != MA_SUCCESS) {
 		printf("Failed to initialize audio device: %s\n", ma_result_description(result));
@@ -154,3 +184,10 @@ int init_audio(
 	return 0;
 }
 
+AudioData *get_audio_data() {
+	if (g_audio_data == NULL) {
+		printf("Audio data is not initialized\n");
+		return NULL;
+	}
+	return g_audio_data;
+}

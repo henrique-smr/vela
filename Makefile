@@ -16,7 +16,7 @@ OBJS=build/main.o
 all: $(OBJS)
 	$(LD) -o $(TARGET) $(OBJS) $(STATIC_LIBS) $(LDFLAGS)
 
-build/main.o: src/main.c
+build/main.o: src/main.c src/audio.c
 	$(CC) -c $(CCFLAGS) $(INCLUDES) src/main.c -o build/main.o
 
 clean:
