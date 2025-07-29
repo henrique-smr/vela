@@ -1,0 +1,22 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-g",
+      "-O0",
+      "-Wall",
+      "-pthread",
+      "-pipe",
+      "-I./src/",
+      "-I./vendor/raylib/include/",
+      "-I./vendor/fftw3/",
+      "-o",
+      "build/main.o",
+      "src/main.c"
+    ],
+    "directory": "/var/home/henrique/probe/raylib",
+    "file": "/var/home/henrique/probe/raylib/src/main.c",
+    "output": "/var/home/henrique/probe/raylib/build/main.o"
+  }
+]
