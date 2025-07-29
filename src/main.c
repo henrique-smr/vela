@@ -16,17 +16,16 @@ static const Color background = CLITERAL(Color){0x00, 0x00, 0x00, 0xff};
 /* White */
 static const Color foreground = CLITERAL(Color){0xff, 0xff, 0xff, 0xff};
 
-void render_samples(int **buf, int fcount) {
+void render_samples(ma_int32 *buf, int fcount) {
 	int width = GetRenderWidth();
 	int height = GetRenderHeight();
 
 	float w = (((float)width) / (float)fcount);
 
 	for (int i = 0; i < (fcount); i++) {
-		float sample = buf[0][i]; // Use the first channel for visualization
+		float sample = (float)buf[i]/1000000000.0f; // Use the first channel for visualization
 		// printf("Sample %d: %f\n", i, sample);
-
-		int h = (int)(((float)height / 2) * (sample/1000000000.0f)); // Scale sample to fit the height
+		int h = (int)(((float)height / 2) * (sample)); // Scale sample to fit the height
 
 		if (sample > 0) {
 			DrawRectangle(i * w, height/2 - h, 1, h / 5 + 1, foreground);
@@ -102,7 +101,8 @@ int main(void)
 		ClearBackground(background);
 
 		if (g_audio_data->buffer.frames_count != 0) {
-			render_samples(g_audio_data->buffer.frames, g_audio_data->buffer.frames_count);
+			// const double *cutted_freq_bins = g_audio_data->analysis_results.freq_bins[0]+2048;
+			render_samples( g_audio_data->buffer.frames[0], AUDIO_FRAMES);
 		}
 		// BeginShaderMode(shader);    // Enable our custom shader for next shapes/textures drawings
 		// DrawTexture(texture, 0, 0, WHITE);  // Drawing BLANK texture, all magic happens on shader
@@ -121,6 +121,8 @@ int main(void)
 	// fftw_destroy_plan(g_audio_fft_plan);
 	// fftw_free(g_audio_fft_in);
 	// fftw_free(g_audio_fft_out);
+	//
+	close_audio(); // Close audio device and free memory
 
 	CloseWindow();        // Close window and OpenGL context
 	//--------------------------------------------------------------------------------------
