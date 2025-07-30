@@ -44,22 +44,20 @@ typedef struct {
 	double *fft_in; // Input for FFT
 	double *fft_out; // Output for FFT
 	fftw_plan fft_plan; // FFT plan
-	size_t fft_size; // Size of the FFT
 } AudioAnalysis;
 
 typedef struct {
 	double **freq_bins; // Frequency bins for FFT results for each channel
 	float *norm_avg; // Average normalized value for each channel
-	ma_uint32 acquired_frames; // Number of frames acquired for analysis
-	// AudioBuffer buffer; // Buffer to hold audio data for analysis, will be larger than the ring buffer
 } AudioAnalysisResults;
 
 typedef struct {
 	AudioFormat playback;
 	AudioFormat capture;
 	ma_uint32 sample_rate; // Sample rate for audio processing
-	ma_pcm_rb buffer; //ring buffer to transport audio data
+	ma_pcm_rb rb; //ring buffer to transport audio data
 	size_t buffer_size_in_frames; // Size of the ring buffer
+	AudioBuffer buffer; // Buffer to hold audio data for analysis, will be larger than the ring buffer
 	AudioAnalysis analysis; // Analysis data for FFT
 	AudioAnalysisResults analysis_results; // Results of the analysis
 } AudioData;
@@ -94,43 +92,74 @@ void* fft_loop(void *arg) {
 		// Acquire read access to the ring buffer
 		void *pBuffer;
 		ma_uint32 sizeInFrames = g_audio_data->buffer_size_in_frames;
-		ma_result result = ma_pcm_rb_acquire_read(&g_audio_data->buffer, &sizeInFrames, &pBuffer);
+		ma_result result = ma_pcm_rb_acquire_read(&g_audio_data->rb, &sizeInFrames, &pBuffer);
 		if (result != MA_SUCCESS) {
 			printf("Failed to acquire read buffer: %s\n", ma_result_description(result));
 			continue; // Retry in the next iteration
 		}
 
 		if (sizeInFrames == 0) {
-			ma_pcm_rb_commit_read(&g_audio_data->buffer, 0);
+			ma_pcm_rb_commit_read(&g_audio_data->rb, 0);
 			continue; // No data to process
 		}
-		g_audio_data->analysis_results.acquired_frames = sizeInFrames;
 		printf("FFT thread acquired read buffer with size: %u frames\n", sizeInFrames);
 
-		for (ma_uint32 j = 0; j < sizeInFrames; j++) {
-			for (ma_uint32 i = 0; i < g_audio_data->capture.channels; i++) {
-				g_audio_data->analysis.fft_in[j] = ((ma_int32 *)pBuffer)[j * g_audio_data->capture.channels + i]; // / 2147483648.0; // Normalize to [-1.0, 1.0]
+		AudioBuffer *buffer = &g_audio_data->buffer;
+		ma_uint32 channels = g_audio_data->capture.channels;
+
+		//fill the buffer with the acquired frames
+		for (ma_uint32 i = 0; i < channels; i++) {
+			ma_uint32 buffer_frames_cursor;
+			for (ma_uint32 j = 0; j < sizeInFrames; j++) {
+
+				ma_uint32 frame_index = j * channels + i;
+
+				buffer_frames_cursor = (j+buffer->frames_cursor) % buffer->size;
+
+				g_audio_data->buffer.frames[i][buffer_frames_cursor] = ((ma_int32 *)pBuffer)[frame_index]; // Copy data to the buffer
+				// Update the frames count
+				if (buffer->frames_count < buffer->size) {
+					buffer->frames_count++;
+				}
+				// Update the cursor for the next frame
 			}
 		}
-		for (ma_uint32 i = 0; i < g_audio_data->capture.channels; i++) {
-			fftw_execute(g_audio_data->analysis.fft_plan); // Execute FFT for this channel
-
-			for (ma_uint32 j = 0; j < sizeInFrames; j++) {
-				g_audio_data->analysis_results.freq_bins[i][j] = fabs(g_audio_data->analysis.fft_out[j]); // Store FFT output
-			}
-			float sum = 0.0f;
-			for (ma_uint32 j = 0; j < sizeInFrames; j++) {
-				sum += g_audio_data->analysis.fft_in[j];
-			}
-			g_audio_data->analysis_results.norm_avg[i] = sum / sizeInFrames; // Calculate average for this channel
-		}
-
+		buffer->frames_cursor = (buffer->frames_cursor + sizeInFrames) % buffer->size; // Update the cursor for the next read
+		printf("FFT thread filled buffer at frame cursor: %zu\n", buffer->frames_cursor);
 		// Release the read access to the ring buffer
-		result = ma_pcm_rb_commit_read(&g_audio_data->buffer, sizeInFrames);
+		result = ma_pcm_rb_commit_read(&g_audio_data->rb, sizeInFrames);
 		if (result != MA_SUCCESS) {
 			printf("Failed to release read buffer: %s\n", ma_result_description(result));
 			continue; // Retry in the next iteration
 		}
+
+		if(buffer->frames_count < buffer->size) {
+			printf("Buffer frames count is less than size: %zu < %zu\n", buffer->frames_count, buffer->size);
+		} else {
+			for (ma_uint32 i = 0; i < channels; i++) {
+				for (ma_uint32 j = 0; j < buffer->size; j++) {
+					g_audio_data->analysis.fft_in[j] = (double)g_audio_data->buffer.frames[i][j]; // Fill FFT input with the buffer data
+				}
+				fftw_execute(g_audio_data->analysis.fft_plan); // Execute FFT for this channel
+
+				for (ma_uint32 j = 0; j < buffer->size; j++) {
+					double ssample = fabs(g_audio_data->analysis.fft_out[j])/buffer->size; // Normalize the FFT output
+					if(j == 0) {
+						g_audio_data->analysis_results.freq_bins[i][j] = 0; // Store FFT output
+					} else {
+						g_audio_data->analysis_results.freq_bins[i][j] = ssample; // remove pink noise
+					}
+				}
+				float sum = 0.0f;
+				for (ma_uint32 j = 0; j < buffer->size; j++) {
+					sum += g_audio_data->analysis.fft_in[j];
+				}
+				g_audio_data->analysis_results.norm_avg[i] = sum / buffer->size; // Calculate average for this channel
+			}
+
+		}
+
+
 	}
 	// After processing, we can stop the FFT thread
 	return NULL;
@@ -143,7 +172,7 @@ void ma_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint3
 
 	void *pBuffer;
 	ma_uint32 sizeInFrames = frameCount;
-	ma_result result = ma_pcm_rb_acquire_write(&audio_data->buffer, &sizeInFrames, &pBuffer);
+	ma_result result = ma_pcm_rb_acquire_write(&audio_data->rb, &sizeInFrames, &pBuffer);
 	if (result != MA_SUCCESS) {
 		printf("Failed to acquire write buffer: %s\n", ma_result_description(result));
 		return;
@@ -152,7 +181,7 @@ void ma_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint3
 	ma_uint32 bytesPerFrame = ma_get_bytes_per_frame(pDevice->capture.format, pDevice->capture.channels);
 	ma_uint32 bytesToWrite = sizeInFrames * bytesPerFrame;
 	MA_COPY_MEMORY(pBuffer, pInput, bytesToWrite);
-	result = ma_pcm_rb_commit_write(&audio_data->buffer, sizeInFrames);
+	result = ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
 	if (result != MA_SUCCESS) {
 		printf("Failed to commit write buffer: %s\n", ma_result_description(result));
 		return;
@@ -180,11 +209,19 @@ AudioData *_init_audio_data(
 	ma_result result = ma_pcm_rb_init(
 		audio_data->capture.format,
 		audio_data->capture.channels,
-		audio_data->buffer_size_in_frames,
+		1200,
 		NULL,
 		NULL,
-		&audio_data->buffer
+		&audio_data->rb
 	);
+	audio_data->buffer.size = audio_data->buffer_size_in_frames;
+	audio_data->buffer.frames_count = 0;
+	audio_data->buffer.frames_cursor = 0;
+	audio_data->buffer.frames = malloc(sizeof(ma_int32 *) * audio_data->capture.channels);
+	for (size_t i = 0; i < audio_data->capture.channels; i++) {
+		audio_data->buffer.frames[i] = malloc(sizeof(ma_int32) * audio_data->buffer.size);
+	}
+
 	if (result != MA_SUCCESS) {
 		printf("Failed to initialize PCM ring buffer: %s\n", ma_result_description(result));
 		return NULL;
@@ -197,10 +234,8 @@ AudioData *_init_audio_data(
 		audio_data->analysis_results.freq_bins[i] = malloc(sizeof(double) * audio_data->buffer_size_in_frames);
 	}
 
-	audio_data->analysis.fft_size = buffer_size;
-
-	audio_data->analysis.fft_in = (double*) fftw_malloc(sizeof(double) * audio_data->analysis.fft_size);
-	audio_data->analysis.fft_out = (double*) fftw_malloc(sizeof(double) *  audio_data->analysis.fft_size);
+	audio_data->analysis.fft_in = (double*) fftw_malloc(sizeof(double) * audio_data->buffer_size_in_frames);
+	audio_data->analysis.fft_out = (double*) fftw_malloc(sizeof(double) * audio_data->buffer_size_in_frames);
 	audio_data->analysis.fft_plan = fftw_plan_r2r_1d(
 		audio_data->buffer_size_in_frames,
 		audio_data->analysis.fft_in,
@@ -272,13 +307,17 @@ void close_audio() {
 	// Stop and uninitialize the audio device
 	ma_device_stop(&device);
 	ma_device_uninit(&device);
-	ma_pcm_rb_uninit(&g_audio_data->buffer);
+	ma_pcm_rb_uninit(&g_audio_data->rb);
 
 	// Free the FFTW resources
 	fftw_destroy_plan(g_audio_data->analysis.fft_plan);
 	fftw_cleanup();
 
 	// Free the audio data structures
+	for (size_t i = 0; i < g_audio_data->capture.channels; i++) {
+		free(g_audio_data->buffer.frames[i]);
+	}
+	free(g_audio_data->buffer.frames);
 	free(g_audio_data->analysis_results.norm_avg);
 	/*printf("Freeing FFT freq_bins\n");*/
 	for (size_t i = 0; i < g_audio_data->capture.channels; i++) {
