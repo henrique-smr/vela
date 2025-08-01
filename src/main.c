@@ -14,8 +14,6 @@
 #include "raygui.h"
 #include "gui_audio_config.h"
 
-#include "strings.h"
-
 static AudioConfig g_audio_config = {
 	.sample_rate = 48000,
 	.buffer_size = 1200,
@@ -108,17 +106,20 @@ void GuiAudio_onOkButton(GuiAudioConfigState *state) {
 	printf("Sample Rate: %d\n", state->SampleRateInputValue);
 	AudioDevicesInfo devices_info = get_audio_devices_info();
 	// Here you can add code to apply the changes or save the configuration
+
+	if(is_audio_initialized()) {
+		close_audio(); // Close the audio device if already initialized
+	}
+	if(is_audio_analysis_running()) {
+		stop_analysis(); // Stop the audio analysis if already running
+	}
+
 	g_audio_config.sample_rate = state->SampleRateInputValue;
-	if (g_audio_config.capture_device_id != NULL) {
-		ma_device_uninit(&g_audio_device);
-		g_audio_config.capture_device_id = NULL;
-	}
+
 	g_audio_config.capture_device_id = &devices_info.capture_devices[state->InputDeviceSelectorIndex].id;
-	if (g_audio_config.playback_device_id != NULL) {
-		ma_device_uninit(&g_audio_device);
-		g_audio_config.playback_device_id = NULL;
-	}
+	
 	g_audio_config.playback_device_id = &devices_info.playback_devices[state->OutputDeviceSelectorIndex].id;
+
 
 	if (init_audio(&g_audio_config) != 0) {
 		printf("Failed to initialize audio\n");
@@ -235,6 +236,7 @@ int main(int argc, char **argv) {
 	// fftw_free(g_audio_fft_out);
 	//
 	stop_analysis(); // Stop audio analysis
+	close_analysis();
 	close_audio(); // Close audio device and free memory
 
 	CloseWindow(); // Close window and OpenGL context

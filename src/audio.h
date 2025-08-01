@@ -228,6 +228,7 @@ void close_audio() {
 	ma_pcm_rb_uninit(&g_audio_data->rb);
 	free(g_audio_data);
 	g_audio_data = NULL;
+	_is_audio_initialized = 0; // Reset the flag to indicate that audio is closed
 
 	printf("Audio closed successfully\n");
 }

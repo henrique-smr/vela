@@ -35,9 +35,13 @@ typedef struct {
 
 static AudioAnalysis *g_audio_analysis;
 
-static int _is_fft_running = 0; // Flag to indicate if the FFT thread is running
+static int _is_analysis_running = 0; // Flag to indicate if the FFT thread is running
 
 static pthread_t fft_thread;
+
+int is_audio_analysis_running() {
+	return _is_analysis_running;
+}
 
 void *fft_loop(void *arg) {
 
@@ -47,13 +51,8 @@ void *fft_loop(void *arg) {
 	// This function is intended to run in a separate thread to process the audio
 	// data and perform FFT analysis on the captured audio. It will continuously
 	// read from the ring buffer and perform FFT on the data.
-	AudioData *audio_data = get_audio_data();
-	while (_is_fft_running) {
+	while (_is_analysis_running) {
 		
-		if (audio_data == NULL) {
-			printf("Audio data is not initialized\n");
-			abort();
-		}
 
 		// Acquire read access to the ring buffer
 
@@ -63,6 +62,12 @@ void *fft_loop(void *arg) {
 		ma_uint32 sizeInFrames = buffer->size; 
 
 		SAMPLE_TYPE *raw_data = read_audio_data(&sizeInFrames);
+
+		if(raw_data == NULL || sizeInFrames == 0) {
+			// No data to process, sleep for a while and continue
+			usleep(1000); // Sleep for 1 ms
+			continue;
+		}
 
 		// fill the buffer with the acquired frames
 		for (ma_uint32 i = 0; i < buffer->channels; i++) {
@@ -119,7 +124,7 @@ int start_analysis(AudioAnalysisConfig *config) {
 		return -1;
 	}
 
-	if (_is_fft_running) {
+	if (_is_analysis_running) {
 		printf("FFT thread is already running\n");
 		return 0; // FFT thread is already running
 	}
@@ -153,7 +158,7 @@ int start_analysis(AudioAnalysisConfig *config) {
 		FFTW_REDFT10,
 		FFTW_ESTIMATE
 	);
-	_is_fft_running = 1; // Set the flag to indicate that the FFT thread should run
+	_is_analysis_running = 1; // Set the flag to indicate that the FFT thread should run
 	pthread_create(&fft_thread, NULL, fft_loop, config);
 
 	return 0;
@@ -161,22 +166,17 @@ int start_analysis(AudioAnalysisConfig *config) {
 
 int stop_analysis() {
 
-	if(get_audio_data() == NULL) {
-		printf("Audio data is not initialized\n");
-		return -1;
-	}
-
-	if(g_audio_analysis == NULL || g_audio_analysis == NULL) {
+	if(g_audio_analysis == NULL) {
 		printf("Audio analysis is not initialized\n");
 		return -1;
 	}
 
-	if (!_is_fft_running) {
+	if (!_is_analysis_running) {
 		printf("FFT thread is not running\n");
 		return 0; // FFT thread is not running
 	}
 
-	_is_fft_running = 0; // Set the flag to indicate that the FFT thread should stop
+	_is_analysis_running = 0; // Set the flag to indicate that the FFT thread should stop
 	pthread_join(fft_thread, NULL); // Wait for the FFT thread to finish
 
 	return 0;
@@ -194,7 +194,7 @@ void close_analysis() {
 		return;
 	}
 
-	_is_fft_running = 0; // Stop the FFT thread
+	_is_analysis_running = 0; // Stop the FFT thread
 
 	// Free the FFTW resources
 	fftw_destroy_plan(g_audio_analysis->fft_plan);
