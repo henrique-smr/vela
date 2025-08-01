@@ -10,7 +10,11 @@
       "-pipe",
       "-I./src/",
       "-I./vendor/raylib/include/",
-      "-I./vendor/fftw3/",
+      "-I./vendor/fftw/api",
+      "-I./vendor/miniaudio/",
+      "-I./vendor/microui/",
+      "-I./vendor/murl/",
+      "-I./vendor/raygui/src/",
       "-o",
       "build/main.o",
       "src/main.c"
