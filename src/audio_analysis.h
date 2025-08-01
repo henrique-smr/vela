@@ -1,3 +1,5 @@
+#ifndef AUDIO_ANALYSIS_H
+#define AUDIO_ANALYSIS_H
 #include <fftw3.h>
 #include <pthread.h>
 #include <stddef.h>
@@ -41,6 +43,13 @@ static pthread_t fft_thread;
 
 int is_audio_analysis_running() {
 	return _is_analysis_running;
+}
+
+AudioAnalysisConfig init_audio_analysis_config() {
+	AudioAnalysisConfig config;
+	config.buffer_size = 1200; // Default buffer size for FFT
+	config.channels = 2;        // Default number of channels
+	return config;
 }
 
 void *fft_loop(void *arg) {
@@ -220,4 +229,4 @@ void close_analysis() {
 	g_audio_analysis = NULL;
 
 }
-
+#endif // AUDIO_ANALYSIS_H

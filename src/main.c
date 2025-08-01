@@ -4,7 +4,6 @@
 
 #define SAMPLE_TYPE ma_int32
 
-#include "sds.h"
 
 #include "audio.h"
 #include "audio_analysis.h"
@@ -13,17 +12,6 @@
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 #include "gui_audio_config.h"
-
-static AudioConfig g_audio_config = {
-	.sample_rate = 48000,
-	.buffer_size = 1200,
-	.capture_format = ma_format_s32,
-	.capture_channels = 2,
-	.capture_device_id = NULL, // Will be set later
-	.playback_format = ma_format_s32,
-	.playback_channels = 2,
-	.playback_device_id = NULL // Will be set later
-};
 
 static AudioAnalysisConfig g_audio_analysis_config = {
 	.buffer_size = 1200,
@@ -98,59 +86,28 @@ void render_audio_analysis(AudioAnalysis *analysis) {
 	free(freq_bins);
 }
 
-void GuiAudio_onOkButton(GuiAudioConfigState *state) {
-	// This function can be used to handle the OK button click event
-	// For now, we just print the current state values
-	printf("Input Device: %d\n", state->InputDeviceSelectorIndex);
-	printf("Output Device: %d\n", state->OutputDeviceSelectorIndex);
-	printf("Sample Rate: %d\n", state->SampleRateInputValue);
-	AudioDevicesInfo devices_info = get_audio_devices_info();
-	// Here you can add code to apply the changes or save the configuration
-
-	if(is_audio_initialized()) {
-		close_audio(); // Close the audio device if already initialized
-	}
-	if(is_audio_analysis_running()) {
-		stop_analysis(); // Stop the audio analysis if already running
-	}
-
-	g_audio_config.sample_rate = state->SampleRateInputValue;
-
-	g_audio_config.capture_device_id = &devices_info.capture_devices[state->InputDeviceSelectorIndex].id;
-	
-	g_audio_config.playback_device_id = &devices_info.playback_devices[state->OutputDeviceSelectorIndex].id;
-
-
-	if (init_audio(&g_audio_config) != 0) {
-		printf("Failed to initialize audio\n");
-	} else {
-		printf("Audio initialized successfully\n");
-	}
-
-	g_audio_analysis_config.buffer_size = g_audio_config.buffer_size;
-	g_audio_analysis_config.channels = g_audio_config.capture_channels;
-
-	if(start_analysis(&g_audio_analysis_config) != 0) {
-		printf("Failed to start audio analysis\n");
-	} else {
-		printf("Audio analysis started successfully\n");
-	}
-}
 
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 
+	init_audio_context();
+	AudioConfig audio_config = init_audio_config();
+	init_audio(&audio_config); // Initialize audio with default configuration
+
 	//--------------------------------------------------------------------------------------
 	// Graphics Initialization
 	//--------------------------------------------------------------------------------------
-	const int screenWidth = 800;
-	const int screenHeight = 800;
+	int display = GetCurrentMonitor();
+	const int screenWidth = GetMonitorWidth(display);
+	const int screenHeight = GetMonitorHeight(display);
 	float resolution[2] = {(float)screenWidth, (float)screenHeight};
 
+	SetExitKey(KEY_NULL);
 	InitWindow(screenWidth, screenHeight, "Vizualizer");
 	SetTargetFPS(60); // Set our game to run at 60 frames-per-second
+	ToggleFullscreen();
 
 	Image imBlank = GenImageColor(1024, 1024, BLANK);
 
@@ -170,29 +127,9 @@ int main(int argc, char **argv) {
 
 	// AudioData *g_audio_data = get_audio_data();
 
-	init_audio_context();
 
-	GuiAudioConfigState state = InitGuiAudioConfig();
-	AudioDevicesInfo devices_info = get_audio_devices_info();
-	state.InputDeviceSelectorIndex = 0; // Default to the first input device
-	state.OutputDeviceSelectorIndex = 0; // Default to the first output device
-	state.SampleRateInputValue = g_audio_config.sample_rate; // Default sample sample_rate
-	sds input_device_names = sdsempty();
-	for (ma_uint32 i = 0; i < devices_info.capture_device_count; i++) {
-		input_device_names = sdscat(input_device_names, devices_info.capture_devices[i].name);
-		if (i < devices_info.capture_device_count - 1) {
-			input_device_names = sdscat(input_device_names, ";");
-		}
-	}
-	sds output_device_names = sdsempty();
-	for (ma_uint32 i = 0; i < devices_info.playback_device_count; i++) {
-		output_device_names = sdscat(output_device_names, devices_info.playback_devices[i].name);
-		if (i < devices_info.playback_device_count - 1) {
-			output_device_names = sdscat(output_device_names, ";");
-		}
-	}
-	state.InputDeviceSelectorText = input_device_names;
-	state.OutputDeviceSelectorText = output_device_names;
+	GuiAudioConfigState state = InitGuiAudioConfig(&audio_config);
+
 	// -------------------------------------------------------------------------------------------------------------
 	// Main game loop
 	while (!WindowShouldClose()) // Detect window close button or ESC key
@@ -205,7 +142,12 @@ int main(int argc, char **argv) {
 		// SetShaderValue(shader, signalLoc, &g_audio_norm_avg[0],
 		// SHADER_UNIFORM_FLOAT);
 		//----------------------------------------------------------------------------------
-
+		// check for alt + enter
+		if (IsKeyPressed(KEY_ENTER) && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
+		{
+			// toggle the state
+			ToggleFullscreen();
+		}
 		// Draw
 		//----------------------------------------------------------------------------------
 		BeginDrawing();
@@ -213,7 +155,7 @@ int main(int argc, char **argv) {
 
          ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR))); 
 
-			GuiAudioConfig(&state);
+			GuiAudioConfig(&state, &audio_config);
             // raygui: controls drawing
             //----------------------------------------------------------------------------------
 		// render_audio_analysis(g_audio_data);
@@ -221,6 +163,9 @@ int main(int argc, char **argv) {
 		// shapes/textures drawings DrawTexture(texture, 0, 0, WHITE);  // Drawing
 		// BLANK texture, all magic happens on shader EndShaderMode();            //
 		// Disable our custom shader, return to default shader
+		if (IsKeyPressed(KEY_ESCAPE)) {
+			CloseWindow(); // Close window and OpenGL context
+		}
 
 		EndDrawing();
 		//----------------------------------------------------------------------------------
@@ -241,8 +186,7 @@ int main(int argc, char **argv) {
 
 	CloseWindow(); // Close window and OpenGL context
 	//--------------------------------------------------------------------------------------
-	sdsfree(input_device_names);	
-	sdsfree(output_device_names);
+
 
 	return 0;
 }

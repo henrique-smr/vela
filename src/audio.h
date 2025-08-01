@@ -1,5 +1,6 @@
 #ifndef AUDIO_H
 #define AUDIO_H
+#include <stdio.h>
 #define MA_IMPLEMENTATION
 #include <fftw3.h>
 #include <miniaudio.h>
@@ -51,6 +52,15 @@ AudioData *get_audio_data() {
 
 int is_audio_initialized() {
 	return _is_audio_initialized;
+}
+
+int init_audio_context() {
+	// Initialize the audio context
+	if (ma_context_init(NULL, 0, NULL, &g_audio_context) != MA_SUCCESS) {
+		printf("Failed to initialize audio context\n");
+		return -1;
+	}
+	return 0;
 }
 
 SAMPLE_TYPE* read_audio_data(ma_uint32 *sizeInFrames) {
@@ -124,53 +134,6 @@ AudioData *_init_audio_data(AudioConfig *config) {
 
 }
 
-AudioConfig init_audio_config() {
-	AudioConfig config;
-	config.sample_rate = 48000; // Default sample rate
-	config.buffer_size = 1200;   // Default buffer size
-
-	config.capture_format = ma_format_s32; // 32-bit signed integer format
-	config.capture_channels = 2;           // Stereo
-	config.capture_device_id = NULL;       // Use default capture device
-
-	config.playback_format = ma_format_s32; // 32-bit signed integer format
-	config.playback_channels = 2;           // Stereo
-	config.playback_device_id = NULL;       // Use default playback device
-
-	return config;
-}
-
-int _init_device(AudioConfig *config) {
-	ma_device_config deviceConfig = ma_device_config_init(ma_device_type_duplex);
-
-	deviceConfig.capture.pDeviceID = config->capture_device_id; // Use the selected capture device
-	deviceConfig.capture.format = config->capture_format;
-	deviceConfig.capture.channels = config->capture_channels;
-	deviceConfig.capture.shareMode = ma_share_mode_shared;
-	deviceConfig.playback.pDeviceID = config->playback_device_id; // Use the selected playback device
-	deviceConfig.playback.format = config->playback_format;
-	deviceConfig.playback.channels = config->playback_channels;
-	deviceConfig.sampleRate = config->sample_rate; // Set the sample rate
-	deviceConfig.pUserData = g_audio_data; // Pass the audio data to the callback
-	deviceConfig.dataCallback = ma_callback;
-	ma_result result;
-	result = ma_device_init(NULL, &deviceConfig, &g_audio_device);
-	if (result != MA_SUCCESS) {
-		printf("Failed to initialize audio device: %s\n", ma_result_description(result));
-		return result;
-	}
-	ma_device_start(&g_audio_device);
-	return 0;
-}
-
-int init_audio_context() {
-	// Initialize the audio context
-	if (ma_context_init(NULL, 0, NULL, &g_audio_context) != MA_SUCCESS) {
-		printf("Failed to initialize audio context\n");
-		return -1;
-	}
-	return 0;
-}
 
 AudioDevicesInfo get_audio_devices_info() {
 	AudioDevicesInfo devices_info;
@@ -190,6 +153,67 @@ AudioDevicesInfo get_audio_devices_info() {
 	}
 
 	return devices_info;
+}
+
+
+AudioConfig init_audio_config() {
+	AudioConfig config;
+	config.sample_rate = 48000; // Default sample rate
+	config.buffer_size = 1200;   // Default buffer size
+
+	config.capture_format = ma_format_s32; // 32-bit signed integer format
+	config.capture_channels = 2;           // Stereo
+	config.capture_device_id = NULL;       // Use default capture device
+
+	config.playback_format = ma_format_s32; // 32-bit signed integer format
+	config.playback_channels = 2;           // Stereo
+	config.playback_device_id = NULL;       // Use default playback device
+	AudioDevicesInfo devices_info = get_audio_devices_info();
+	if (devices_info.capture_device_count > 0) {
+		for (ma_uint32 i = 0; i < devices_info.capture_device_count; i++) {
+			if (devices_info.capture_devices[i].isDefault) {
+				printf("Using default capture device: %s\n", devices_info.capture_devices[i].name);
+				config.capture_device_id = &devices_info.capture_devices[i].id; // Use the first default capture device
+				break;
+			}
+		}
+	}
+	if (devices_info.playback_device_count > 0) {
+		for (ma_uint32 i = 0; i < devices_info.playback_device_count; i++) {
+			if (devices_info.playback_devices[i].isDefault) {
+				printf("Using default playback device: %s\n", devices_info.playback_devices[i].name);
+				config.playback_device_id = &devices_info.playback_devices[i].id; // Use the first default playback device
+				break;
+			}
+		}
+	}
+	return config;
+}
+
+int _init_device(AudioConfig *config) {
+	ma_device_config deviceConfig = ma_device_config_init(ma_device_type_duplex);
+
+
+	deviceConfig.capture.pDeviceID = config->capture_device_id; // Use the selected capture device
+	deviceConfig.capture.format = config->capture_format;
+	deviceConfig.capture.channels = config->capture_channels;
+	deviceConfig.capture.shareMode = ma_share_mode_shared;
+	deviceConfig.playback.pDeviceID = config->playback_device_id; // Use the selected playback device
+	deviceConfig.playback.format = config->playback_format;
+	deviceConfig.playback.channels = config->playback_channels;
+	deviceConfig.sampleRate = config->sample_rate; // Set the sample rate
+	deviceConfig.pUserData = g_audio_data; // Pass the audio data to the callback
+	deviceConfig.dataCallback = ma_callback;
+	ma_result result;
+	result = ma_device_init(&g_audio_context, &deviceConfig, &g_audio_device);
+	if (result != MA_SUCCESS) {
+		printf("Failed to initialize audio device: %s\n", ma_result_description(result));
+		return result;
+	}
+	ma_device_start(&g_audio_device);
+
+	printf("Audio device initialized successfully\n");
+	return 0;
 }
 
 
@@ -214,6 +238,7 @@ int init_audio(AudioConfig *config) {
 
 
 	_is_audio_initialized = 1; // Set the flag to indicate that audio is initialized
+	printf("Audio initialized successfully\n");
 
 	return 0;
 }
