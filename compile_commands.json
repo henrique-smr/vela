@@ -9,11 +9,10 @@
       "-pthread",
       "-pipe",
       "-I./src/",
+      "-I./vendor/sds/",
       "-I./vendor/raylib/include/",
       "-I./vendor/fftw/api",
       "-I./vendor/miniaudio/",
-      "-I./vendor/microui/",
-      "-I./vendor/murl/",
       "-I./vendor/raygui/src/",
       "-o",
       "build/main.o",
@@ -22,5 +21,28 @@
     "directory": "/var/home/henrique/probe/raylib",
     "file": "/var/home/henrique/probe/raylib/src/main.c",
     "output": "/var/home/henrique/probe/raylib/build/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-c",
+      "-g",
+      "-O0",
+      "-Wall",
+      "-pthread",
+      "-pipe",
+      "-I./src/",
+      "-I./vendor/sds/",
+      "-I./vendor/raylib/include/",
+      "-I./vendor/fftw/api",
+      "-I./vendor/miniaudio/",
+      "-I./vendor/raygui/src/",
+      "-o",
+      "build/sds.o",
+      "vendor/sds/sds.c"
+    ],
+    "directory": "/var/home/henrique/probe/raylib",
+    "file": "/var/home/henrique/probe/raylib/vendor/sds/sds.c",
+    "output": "/var/home/henrique/probe/raylib/build/sds.o"
   }
 ]

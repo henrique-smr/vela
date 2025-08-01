@@ -1,20 +1,36 @@
+//----------------------------------------------------------------------------------
+// Audio Visualizer
+//----------------------------------------------------------------------------------
+
+#define SAMPLE_TYPE ma_int32
+
+#include "sds.h"
+
 #include "audio.h"
-// #include "microui.h"
-// #include "murl.h"
+#include "audio_analysis.h"
+#include "raylib.h"
+
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
-#include "raylib.h"
 #include "gui_audio_config.h"
 
-#define AUDIO_SAMPLE_RATE 48000 // Sample rate for audio processing
-#define AUDIO_FRAMES 4800
-#define AUDIO_INPUT_CHANNELS 2
-#define AUDIO_OUTPUT_CHANNELS 2
+#include "strings.h"
 
-static const int g_audio_input_format =
-    ma_format_s32; // Using 32-bit signed integer format
-static const int g_audio_output_format =
-    ma_format_s32; // Using 32-bit signed integer format
+static AudioConfig g_audio_config = {
+	.sample_rate = 48000,
+	.buffer_size = 1200,
+	.capture_format = ma_format_s32,
+	.capture_channels = 2,
+	.capture_device_id = NULL, // Will be set later
+	.playback_format = ma_format_s32,
+	.playback_channels = 2,
+	.playback_device_id = NULL // Will be set later
+};
+
+static AudioAnalysisConfig g_audio_analysis_config = {
+	.buffer_size = 1200,
+	.channels = 2
+};
 
 /* Black */
 static const Color background = CLITERAL(Color){0x00, 0x00, 0x00, 0xff};
@@ -22,18 +38,18 @@ static const Color background = CLITERAL(Color){0x00, 0x00, 0x00, 0xff};
 /* White */
 static const Color foreground = CLITERAL(Color){0xff, 0xff, 0xff, 0xff};
 
-void render_audio_analysis(AudioData *audio_data) {
+void render_audio_analysis(AudioAnalysis *analysis) {
 	// This function can be used to render the audio analysis results
 	int rw = GetRenderWidth();
 	int rh = GetRenderHeight();
-	int fcount = audio_data->buffer.frames_count;
+	int fcount = analysis->buffer.size;
 	int accumulation = 48; // How many frames to accumulate for visualization
 	int bin_count = floor(fcount / (float)accumulation);
 
-	ma_int32 *time_data =
-		audio_data->buffer.frames[0]; // Use the first channel for visualization
+	double *time_data =
+		analysis->time_data[0]; // Use the first channel for visualization
 	double *freq_data =
-		audio_data->analysis_results.freq_data[0]; // Use the first channel for frequency bins
+		analysis->freq_data[0]; // Use the first channel for frequency bins
 	//
 	//acumulate freq_data in
 	double *freq_bins = (double *)malloc(sizeof(double) * bin_count);
@@ -83,13 +99,41 @@ void render_audio_analysis(AudioData *audio_data) {
 	}
 	free(freq_bins);
 }
+
 void GuiAudio_onOkButton(GuiAudioConfigState *state) {
 	// This function can be used to handle the OK button click event
 	// For now, we just print the current state values
 	printf("Input Device: %d\n", state->InputDeviceSelectorIndex);
 	printf("Output Device: %d\n", state->OutputDeviceSelectorIndex);
 	printf("Sample Rate: %d\n", state->SampleRateInputValue);
+	AudioDevicesInfo devices_info = get_audio_devices_info();
 	// Here you can add code to apply the changes or save the configuration
+	g_audio_config.sample_rate = state->SampleRateInputValue;
+	if (g_audio_config.capture_device_id != NULL) {
+		ma_device_uninit(&g_audio_device);
+		g_audio_config.capture_device_id = NULL;
+	}
+	g_audio_config.capture_device_id = &devices_info.capture_devices[state->InputDeviceSelectorIndex].id;
+	if (g_audio_config.playback_device_id != NULL) {
+		ma_device_uninit(&g_audio_device);
+		g_audio_config.playback_device_id = NULL;
+	}
+	g_audio_config.playback_device_id = &devices_info.playback_devices[state->OutputDeviceSelectorIndex].id;
+
+	if (init_audio(&g_audio_config) != 0) {
+		printf("Failed to initialize audio\n");
+	} else {
+		printf("Audio initialized successfully\n");
+	}
+
+	g_audio_analysis_config.buffer_size = g_audio_config.buffer_size;
+	g_audio_analysis_config.channels = g_audio_config.capture_channels;
+
+	if(start_analysis(&g_audio_analysis_config) != 0) {
+		printf("Failed to start audio analysis\n");
+	} else {
+		printf("Audio analysis started successfully\n");
+	}
 }
 
 //------------------------------------------------------------------------------------
@@ -97,15 +141,6 @@ void GuiAudio_onOkButton(GuiAudioConfigState *state) {
 //------------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 
-	// if (init_audio(AUDIO_SAMPLE_RATE, AUDIO_FRAMES, g_audio_input_format,
-	// 				 AUDIO_INPUT_CHANNELS, g_audio_output_format,
-	// 				 AUDIO_OUTPUT_CHANNELS) != 0) {
-	// 	printf("Failed to initialize audio\n");
-	// 	return -1;
-	// } else {
-	// 	printf("Audio initialized successfully\n");
-	// }
-	//
 	//--------------------------------------------------------------------------------------
 	// Graphics Initialization
 	//--------------------------------------------------------------------------------------
@@ -134,7 +169,29 @@ int main(int argc, char **argv) {
 
 	// AudioData *g_audio_data = get_audio_data();
 
+	init_audio_context();
+
 	GuiAudioConfigState state = InitGuiAudioConfig();
+	AudioDevicesInfo devices_info = get_audio_devices_info();
+	state.InputDeviceSelectorIndex = 0; // Default to the first input device
+	state.OutputDeviceSelectorIndex = 0; // Default to the first output device
+	state.SampleRateInputValue = g_audio_config.sample_rate; // Default sample sample_rate
+	sds input_device_names = sdsempty();
+	for (ma_uint32 i = 0; i < devices_info.capture_device_count; i++) {
+		input_device_names = sdscat(input_device_names, devices_info.capture_devices[i].name);
+		if (i < devices_info.capture_device_count - 1) {
+			input_device_names = sdscat(input_device_names, ";");
+		}
+	}
+	sds output_device_names = sdsempty();
+	for (ma_uint32 i = 0; i < devices_info.playback_device_count; i++) {
+		output_device_names = sdscat(output_device_names, devices_info.playback_devices[i].name);
+		if (i < devices_info.playback_device_count - 1) {
+			output_device_names = sdscat(output_device_names, ";");
+		}
+	}
+	state.InputDeviceSelectorText = input_device_names;
+	state.OutputDeviceSelectorText = output_device_names;
 	// -------------------------------------------------------------------------------------------------------------
 	// Main game loop
 	while (!WindowShouldClose()) // Detect window close button or ESC key
@@ -177,10 +234,13 @@ int main(int argc, char **argv) {
 	// fftw_free(g_audio_fft_in);
 	// fftw_free(g_audio_fft_out);
 	//
+	stop_analysis(); // Stop audio analysis
 	close_audio(); // Close audio device and free memory
 
 	CloseWindow(); // Close window and OpenGL context
 	//--------------------------------------------------------------------------------------
+	sdsfree(input_device_names);	
+	sdsfree(output_device_names);
 
 	return 0;
 }

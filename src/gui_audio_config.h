@@ -38,6 +38,13 @@ typedef struct {
     bool SampleRateInputEditMode;
     int SampleRateInputValue;
 
+    const char *InputDeviceSelectorText;
+    const char *OutputDeviceSelectorText;
+	 const char *SampleRateInputText;
+    const char *Label003Text;
+    const char *Label004Text;
+    const char *OkButtonText;
+
     Rectangle layoutRecs[6];
 
     // Custom state variables (depend on development software)
@@ -95,6 +102,12 @@ GuiAudioConfigState InitGuiAudioConfig(void)
     state.OutputDeviceSelectorIndex = 0;
     state.SampleRateInputEditMode = false;
     state.SampleRateInputValue = 0;
+    state.InputDeviceSelectorText = "";
+    state.OutputDeviceSelectorText = "";
+	 state.SampleRateInputText = "Sample Rate";
+    state.Label003Text = "Input";
+    state.Label004Text = "Output";
+    state.OkButtonText = "Ok";
 
     state.layoutRecs[0] = (Rectangle){ 352, 184, 296, 24 };
     state.layoutRecs[1] = (Rectangle){ 352, 216, 296, 24 };
@@ -110,21 +123,15 @@ GuiAudioConfigState InitGuiAudioConfig(void)
 
 void GuiAudioConfig(GuiAudioConfigState *state)
 {
-    const char *InputDeviceSelectorText = "ONE;TWO;THREE";
-    const char *OutputDeviceSelectorText = "ONE;TWO;THREE";
-	 const char *SampleRateInputText = "Sample Rate";
-    const char *Label003Text = "Input";
-    const char *Label004Text = "Output";
-    const char *OkButtonText = "Ok";
     
     if (state->InputDeviceSelectorEditMode || state->OutputDeviceSelectorEditMode) GuiLock();
 
-    if (GuiValueBox(state->layoutRecs[2], SampleRateInputText, &state->SampleRateInputValue, 0, 100, state->SampleRateInputEditMode)) state->SampleRateInputEditMode = !state->SampleRateInputEditMode;
-    GuiLabel(state->layoutRecs[3], Label003Text);
-    GuiLabel(state->layoutRecs[4], Label004Text);
-    if (GuiButton(state->layoutRecs[5], OkButtonText)) GuiAudio_onOkButton(state); 
-    if (GuiDropdownBox(state->layoutRecs[0], InputDeviceSelectorText, &state->InputDeviceSelectorIndex, state->InputDeviceSelectorEditMode)) state->InputDeviceSelectorEditMode = !state->InputDeviceSelectorEditMode;
-    if (GuiDropdownBox(state->layoutRecs[1], OutputDeviceSelectorText, &state->OutputDeviceSelectorIndex, state->OutputDeviceSelectorEditMode)) state->OutputDeviceSelectorEditMode = !state->OutputDeviceSelectorEditMode;
+    if (GuiValueBox(state->layoutRecs[2], state->SampleRateInputText, &state->SampleRateInputValue, 0, 500000, state->SampleRateInputEditMode)) state->SampleRateInputEditMode = !state->SampleRateInputEditMode;
+    GuiLabel(state->layoutRecs[3], state->Label003Text);
+    GuiLabel(state->layoutRecs[4], state->Label004Text);
+    if (GuiButton(state->layoutRecs[5], state->OkButtonText)) GuiAudio_onOkButton(state); 
+    if (GuiDropdownBox(state->layoutRecs[1], state->OutputDeviceSelectorText, &state->OutputDeviceSelectorIndex, state->OutputDeviceSelectorEditMode)) state->OutputDeviceSelectorEditMode = !state->OutputDeviceSelectorEditMode;
+    if (GuiDropdownBox(state->layoutRecs[0], state->InputDeviceSelectorText, &state->InputDeviceSelectorIndex, state->InputDeviceSelectorEditMode)) state->InputDeviceSelectorEditMode = !state->InputDeviceSelectorEditMode;
     
     GuiUnlock();
 }
