@@ -73,6 +73,8 @@ SAMPLE_TYPE* read_audio_data(ma_uint32 *sizeInFrames) {
 
 	void *pBuffer;
 
+	void *raw_data;
+
 	ma_result result = ma_pcm_rb_acquire_read(&audio_data->rb, sizeInFrames, &pBuffer);
 	if (result != MA_SUCCESS) {
 		printf("Failed to acquire read buffer: %s\n", ma_result_description(result));
@@ -84,8 +86,21 @@ SAMPLE_TYPE* read_audio_data(ma_uint32 *sizeInFrames) {
 		return NULL; // No data to read
 	}
 
+	// Calculate the size in bytes to read
+	ma_uint32 bytesPerFrame = ma_get_bytes_per_frame(g_audio_device.capture.format, g_audio_device.capture.channels);
+	raw_data = malloc(*sizeInFrames * bytesPerFrame);
+	if (raw_data == NULL) {
+		printf("Failed to allocate memory for audio data\n");
+		ma_pcm_rb_commit_read(&audio_data->rb, 0);
+		return NULL;
+	}
+	// Copy the data from the ring buffer to the raw_data buffer
+	MA_COPY_MEMORY(raw_data, pBuffer, *sizeInFrames * bytesPerFrame);
 
-	return (SAMPLE_TYPE *)pBuffer; // Return the pointer to the read buffer
+	ma_pcm_rb_commit_read(&audio_data->rb, *sizeInFrames);
+
+	return (SAMPLE_TYPE*)raw_data; // Return the pointer to the read buffer
+
 }
 
 void ma_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {

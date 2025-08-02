@@ -72,6 +72,7 @@ void *fft_loop(void *arg) {
 
 		SAMPLE_TYPE *raw_data = read_audio_data(&sizeInFrames);
 
+
 		if(raw_data == NULL || sizeInFrames == 0) {
 			// No data to process, sleep for a while and continue
 			usleep(1000); // Sleep for 1 ms
@@ -117,8 +118,7 @@ void *fft_loop(void *arg) {
 				for (ma_uint32 j = 0; j < buffer->size; j++) {
 					sum += g_audio_analysis->fft_in[j];
 				}
-				g_audio_analysis->norm_avg[i] =
-					sum / buffer->size; // Calculate average for this channel
+				g_audio_analysis->norm_avg[i] = sum / buffer->size; // Calculate average for this channel
 			}
 		}
 	}
@@ -140,14 +140,14 @@ int start_analysis(AudioAnalysisConfig *config) {
 
 	g_audio_analysis = malloc(sizeof(AudioAnalysis));
 
-	g_audio_analysis->norm_avg = malloc(sizeof(float) * config->channels);
+	g_audio_analysis->norm_avg = calloc(config->channels,sizeof(float));
 	g_audio_analysis->freq_data = malloc(sizeof(double *) * config->channels);
 	for (size_t i = 0; i < config->channels; i++) {
-		g_audio_analysis->freq_data[i] = malloc(sizeof(double) * config->buffer_size);
+		g_audio_analysis->freq_data[i] = calloc(config->buffer_size,sizeof(double));
 	}
 	g_audio_analysis->time_data = malloc(sizeof(double *) * config->channels);
 	for (size_t i = 0; i < config->channels; i++) {
-		g_audio_analysis->time_data[i] = malloc(sizeof(double) * config->buffer_size);
+		g_audio_analysis->time_data[i] = calloc(config->buffer_size,sizeof(double));
 	}
 	g_audio_analysis->buffer.size = config->buffer_size;
 	g_audio_analysis->buffer.channels = config->channels;
@@ -155,7 +155,7 @@ int start_analysis(AudioAnalysisConfig *config) {
 	g_audio_analysis->buffer.frames_cursor = 0;
 	g_audio_analysis->buffer.frames = malloc(sizeof(ma_int32 *) * config->channels);
 	for (size_t i = 0; i < config->channels;i++) {
-		g_audio_analysis->buffer.frames[i] = malloc(sizeof(ma_int32) * config->buffer_size);
+		g_audio_analysis->buffer.frames[i] = calloc(config->buffer_size,sizeof(ma_int32));
 	}
 
 	g_audio_analysis->fft_in = (double *)fftw_malloc(sizeof(double) * config->buffer_size);

@@ -146,7 +146,6 @@ GuiAudioConfigState InitGuiAudioConfig(AudioConfig *audio_config)
 		if (i < devices_info.capture_device_count - 1) {
 			input_device_names = sdscat(input_device_names, ";");
 		}
-		printf("device is equal: %d\n", ma_device_id_equal(&devices_info.capture_devices[i].id, audio_config->capture_device_id));
 		if( audio_config != NULL && audio_config->capture_device_id != NULL &&
 					   ma_device_id_equal(&devices_info.capture_devices[i].id, audio_config->capture_device_id)) {
 			state.InputDeviceSelectorIndex = i; // Set the index of the input device
@@ -158,7 +157,6 @@ GuiAudioConfigState InitGuiAudioConfig(AudioConfig *audio_config)
 		if (i < devices_info.playback_device_count - 1) {
 			output_device_names = sdscat(output_device_names, ";");
 		}
-		printf("device is equal: %d\n", ma_device_id_equal(&devices_info.playback_devices[i].id, audio_config->playback_device_id));
 		if( audio_config != NULL && audio_config->playback_device_id != NULL &&
 					   ma_device_id_equal(&devices_info.playback_devices[i].id, audio_config->playback_device_id)) {
 			state.OutputDeviceSelectorIndex = i; // Set the index of the output device
@@ -248,6 +246,7 @@ void AudioConfigSaveButton(GuiAudioConfigState *state, AudioConfig *audio_config
 	}
 	if(is_audio_analysis_running()) {
 		stop_analysis(); // Stop the audio analysis if already running
+		close_analysis(); // Close the audio analysis
 	}
 
 	AudioAnalysisConfig audio_analysis_config = init_audio_analysis_config();

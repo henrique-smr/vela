@@ -40,17 +40,20 @@ void render_audio_analysis(AudioAnalysis *analysis) {
 		freq_bins[i] = freq_bins[i]/accumulation;
 	}
 
-	float w = (((float)rw) / (float)fcount);
+	float w = ceil(((float)rw) / (float)fcount);
+
+
+	// printf("rw: %d, rh: %d, fcount: %d, bin_count: %d, w: %f\n", rw, rh, fcount, bin_count, w);
 
 	for (int i = 0; i < fcount; i++) {
 		float td = (float)time_data[i] / 214748360.0f;
 		int td_h = (int)(((float)rh / 2) * td);
 
 		if (td > 0) {
-			DrawRectangle(i * w, 2 * rh / 3 - td_h, 1, td_h / 5 + 1, foreground);
+			DrawRectangle(i * w, 2 * rh / 3 - td_h, w, td_h / 5 + 1, foreground);
 		} else if (td < 0) {
 			td_h = -td_h;
-			DrawRectangle(i * w, 2 * rh / 3, 1, td_h / 5 + 1, foreground);
+			DrawRectangle(i * w, 2 * rh / 3, w, td_h / 5 + 1, foreground);
 		}
 	}
 	w = ceil((((float)rw) / (float)bin_count));
@@ -91,6 +94,10 @@ int main(int argc, char **argv) {
 	init_audio_context();
 	AudioConfig audio_config = init_audio_config();
 	init_audio(&audio_config); // Initialize audio with default configuration
+	start_analysis(&(AudioAnalysisConfig){
+		.buffer_size = audio_config.buffer_size,
+		.channels = audio_config.capture_channels
+	}); // Start audio analysis
 
 	//--------------------------------------------------------------------------------------
 	// Graphics Initialization
@@ -157,7 +164,7 @@ int main(int argc, char **argv) {
 
 			// ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR))); 
 			ClearBackground(background);
-			// render_audio_analysis(g_audio_data);
+			render_audio_analysis(g_audio_analysis);
 
 			if(app->show_menu) {
 				GuiAudioConfig(&state, &audio_config, app);
@@ -184,11 +191,7 @@ int main(int argc, char **argv) {
 	//--------------------------------------------------------------------------------------
 	UnloadShader(shader);
 	UnloadTexture(texture);
-	//
-	// fftw_destroy_plan(g_audio_fft_plan);
-	// fftw_free(g_audio_fft_in);
-	// fftw_free(g_audio_fft_out);
-	//
+
 	stop_analysis(); // Stop audio analysis
 	close_analysis();
 	close_audio(); // Close audio device and free memory
