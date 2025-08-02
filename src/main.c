@@ -4,7 +4,7 @@
 
 #define SAMPLE_TYPE ma_int32
 
-
+#include "application.h"
 #include "audio.h"
 #include "audio_analysis.h"
 #include "raylib.h"
@@ -12,16 +12,10 @@
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 #include "gui_audio_config.h"
+#include "style_dark.h"
 
-static AudioAnalysisConfig g_audio_analysis_config = {
-	.buffer_size = 1200,
-	.channels = 2
-};
 
-/* Black */
 static const Color background = CLITERAL(Color){0x00, 0x00, 0x00, 0xff};
-
-/* White */
 static const Color foreground = CLITERAL(Color){0xff, 0xff, 0xff, 0xff};
 
 void render_audio_analysis(AudioAnalysis *analysis) {
@@ -92,6 +86,8 @@ void render_audio_analysis(AudioAnalysis *analysis) {
 //------------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 
+	Application *app = init_application();
+
 	init_audio_context();
 	AudioConfig audio_config = init_audio_config();
 	init_audio(&audio_config); // Initialize audio with default configuration
@@ -102,11 +98,10 @@ int main(int argc, char **argv) {
 	int display = GetCurrentMonitor();
 	const int screenWidth = GetMonitorWidth(display);
 	const int screenHeight = GetMonitorHeight(display);
-	float resolution[2] = {(float)screenWidth, (float)screenHeight};
 
-	SetExitKey(KEY_NULL);
 	InitWindow(screenWidth, screenHeight, "Vizualizer");
 	SetTargetFPS(60); // Set our game to run at 60 frames-per-second
+	GuiLoadStyleDark(); // Load dark style for raygui
 	ToggleFullscreen();
 
 	Image imBlank = GenImageColor(1024, 1024, BLANK);
@@ -134,40 +129,54 @@ int main(int argc, char **argv) {
 	// Main game loop
 	while (!WindowShouldClose()) // Detect window close button or ESC key
 	{
+	SetExitKey(KEY_NULL);
+		if (app->is_running) {
+			// Update
+			//----------------------------------------------------------------------------------
+			// time = (float)GetTime();
+			// SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+			// SetShaderValue(shader, signalLoc, &g_audio_norm_avg[0],
+			// SHADER_UNIFORM_FLOAT);
+			//----------------------------------------------------------------------------------
+			// check for alt + enter
+			if (IsKeyPressed(KEY_ENTER) && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
+			{
+				// toggle the state
+				ToggleFullscreen();
+			}
+			if (IsKeyPressed(KEY_ESCAPE)) {
+				if (app->show_menu) {
+					app->show_menu = false;
+				} else {
+					app->show_menu = true;
+				}
+			}
+			// Draw
+			//----------------------------------------------------------------------------------
+			BeginDrawing();
 
-		// Update
-		//----------------------------------------------------------------------------------
-		// time = (float)GetTime();
-		// SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
-		// SetShaderValue(shader, signalLoc, &g_audio_norm_avg[0],
-		// SHADER_UNIFORM_FLOAT);
-		//----------------------------------------------------------------------------------
-		// check for alt + enter
-		if (IsKeyPressed(KEY_ENTER) && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
-		{
-			// toggle the state
-			ToggleFullscreen();
-		}
-		// Draw
-		//----------------------------------------------------------------------------------
-		BeginDrawing();
+			// ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR))); 
+			ClearBackground(background);
+			// render_audio_analysis(g_audio_data);
+
+			if(app->show_menu) {
+				GuiAudioConfig(&state, &audio_config, app);
+			}
+			// raygui: controls drawing
+			//----------------------------------------------------------------------------------
+			// BeginShaderMode(shader);    // Enable our custom shader for next
+			// shapes/textures drawings DrawTexture(texture, 0, 0, WHITE);  // Drawing
+			// BLANK texture, all magic happens on shader EndShaderMode();            //
+			// Disable our custom shader, return to default shader
+
+			EndDrawing();
 
 
-         ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR))); 
-
-			GuiAudioConfig(&state, &audio_config);
-            // raygui: controls drawing
-            //----------------------------------------------------------------------------------
-		// render_audio_analysis(g_audio_data);
-		// BeginShaderMode(shader);    // Enable our custom shader for next
-		// shapes/textures drawings DrawTexture(texture, 0, 0, WHITE);  // Drawing
-		// BLANK texture, all magic happens on shader EndShaderMode();            //
-		// Disable our custom shader, return to default shader
-		if (IsKeyPressed(KEY_ESCAPE)) {
+		} else {
 			CloseWindow(); // Close window and OpenGL context
+
 		}
 
-		EndDrawing();
 		//----------------------------------------------------------------------------------
 	}
 
@@ -183,8 +192,7 @@ int main(int argc, char **argv) {
 	stop_analysis(); // Stop audio analysis
 	close_analysis();
 	close_audio(); // Close audio device and free memory
-
-	CloseWindow(); // Close window and OpenGL context
+	uinit_application(app); // Free application resources
 	//--------------------------------------------------------------------------------------
 
 
