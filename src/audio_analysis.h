@@ -1,6 +1,7 @@
 #ifndef AUDIO_ANALYSIS_H
 #define AUDIO_ANALYSIS_H
 #include <fftw3.h>
+#include <math.h>
 #include <pthread.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -111,7 +112,7 @@ void *fft_loop(void *arg) {
 					if (j == 0) {
 						g_audio_analysis->freq_data[i][j] = 0; // Store FFT output
 					} else {
-						g_audio_analysis->freq_data[i][j] = ssample; // remove pink noise
+						g_audio_analysis->freq_data[i][j] = log1p(ssample*j); // remove pink noise
 					}
 				}
 				float sum = 0.0f;

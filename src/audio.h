@@ -10,16 +10,24 @@
 #include <time.h>
 
 #ifndef SAMPLE_TYPE
-#define SAMPLE_TYPE ma_int32
+#define SAMPLE_TYPE ma_float
 #endif
 
 typedef struct {
 	ma_pcm_rb rb;                 // ring buffer to transport audio data
+	ma_decoder* decoder;         // audio decoder for processing the sound file if needed
 } AudioData;
+
+typedef enum {
+	AUDIO_SOURCE_TYPE_INLINE,		  // inline input
+	AUDIO_SOURCE_TYPE_FILE,	  // Audio file input
+} AudioSourceType;
 
 typedef struct {
 	ma_uint32 sample_rate;
 	size_t buffer_size;
+	AudioSourceType source_type; // Type of audio source (e.g., inline, file)
+	char *file_path; // Path to the audio file if source_type is AUDIO_SOURCE_TYPE_FILE
 
 	ma_format capture_format;
 	ma_uint32 capture_channels;
@@ -103,7 +111,27 @@ SAMPLE_TYPE* read_audio_data(ma_uint32 *sizeInFrames) {
 
 }
 
-void ma_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
+void ma_callback_file(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
+	if (frameCount == 0) return;
+
+	AudioData *audio_data = (AudioData *)pDevice->pUserData;
+
+	void *pBuffer;
+	ma_uint32 sizeInFrames = frameCount;
+	ma_result result = ma_pcm_rb_acquire_write(&audio_data->rb, &sizeInFrames, &pBuffer);
+	if (result != MA_SUCCESS) {
+		printf("Failed to acquire write buffer: %s\n", ma_result_description(result));
+		return;
+	}
+
+	// Read PCM frames from the decoder
+	ma_decoder_read_pcm_frames(audio_data->decoder, pBuffer, sizeInFrames, NULL);
+	ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
+	// Copy the output data to the output buffer
+	MA_COPY_MEMORY(pOutput, pBuffer, frameCount * ma_get_bytes_per_frame(pDevice->playback.format, pDevice->playback.channels));
+}
+
+void ma_callback_inline(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
 	if (frameCount == 0) return;
 
 	AudioData *audio_data = (AudioData *)pDevice->pUserData;
@@ -116,18 +144,15 @@ void ma_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint3
 		return;
 	}
 	// Copy the input samples to the ring buffer
-	ma_uint32 bytesPerFrame = ma_get_bytes_per_frame(pDevice->capture.format,
-																  pDevice->capture.channels);
+	ma_uint32 bytesPerFrame = ma_get_bytes_per_frame(pDevice->capture.format, pDevice->capture.channels);
 	ma_uint32 bytesToWrite = sizeInFrames * bytesPerFrame;
 	MA_COPY_MEMORY(pBuffer, pInput, bytesToWrite);
-	result = ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
-	if (result != MA_SUCCESS) {
-		printf("Failed to commit write buffer: %s\n", ma_result_description(result));
-		return;
-	}
-
 	MA_COPY_MEMORY(pOutput, pInput, frameCount * ma_get_bytes_per_frame(pDevice->capture.format, pDevice->capture.channels));
+	ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
+
 }
+
+ma_decoder_config g_decoder_config;
 
 AudioData *_init_audio_data(AudioConfig *config) {
 	AudioData *audio_data = (AudioData *)malloc(sizeof(AudioData));
@@ -143,6 +168,31 @@ AudioData *_init_audio_data(AudioConfig *config) {
 	if (result != MA_SUCCESS) {
 		printf("Failed to initialize PCM ring buffer: %s\n", ma_result_description(result));
 		return NULL;
+	}
+
+	if (config->source_type == AUDIO_SOURCE_TYPE_FILE) {
+		if (config->file_path == NULL) {
+			printf("File path is NULL for AUDIO_SOURCE_TYPE_FILE\n");
+			return NULL;
+		}
+		// g_decoder_config = ma_decoder_config_init(config->capture_format, config->sample_rate, config->capture_channels);
+		// g_decoder_config.channels=2;
+		// g_decoder_config.sampleRate = 0;
+		// g_decoder_config.format = 0;
+		// g_decoder_config.encodingFormat = ma_encoding_format_mp3;
+		// ma_decoder_config decoder_config = ma_decoder_config_init();
+		audio_data->decoder = (ma_decoder *)malloc(sizeof(ma_decoder));
+		ma_decoder_init_file(config->file_path,NULL, audio_data->decoder);
+		if (audio_data->decoder == NULL) {
+			printf("Failed to initialize audio decoder for file: %s\n", config->file_path);
+			return NULL;
+		}
+		config->sample_rate = audio_data->decoder->outputSampleRate; // Set the sample rate from the decoder
+		config->playback_format = audio_data->decoder->outputFormat; // Set the playback format from the decoder
+		config->playback_channels = audio_data->decoder->outputChannels; // Set the playback channels from the decoder
+
+	} else {
+		audio_data->decoder = NULL; // No decoder for inline input
 	}
 
 	return audio_data;
@@ -175,12 +225,13 @@ AudioConfig init_audio_config() {
 	AudioConfig config;
 	config.sample_rate = 48000; // Default sample rate
 	config.buffer_size = 1200;   // Default buffer size
+	config.source_type = AUDIO_SOURCE_TYPE_INLINE; // Default source type is inline
 
-	config.capture_format = ma_format_s32; // 32-bit signed integer format
+	config.capture_format = ma_format_f32;
 	config.capture_channels = 2;           // Stereo
 	config.capture_device_id = NULL;       // Use default capture device
 
-	config.playback_format = ma_format_s32; // 32-bit signed integer format
+	config.playback_format = ma_format_f32;
 	config.playback_channels = 2;           // Stereo
 	config.playback_device_id = NULL;       // Use default playback device
 	AudioDevicesInfo devices_info = get_audio_devices_info();
@@ -216,9 +267,13 @@ int _init_device(AudioConfig *config) {
 	deviceConfig.playback.pDeviceID = config->playback_device_id; // Use the selected playback device
 	deviceConfig.playback.format = config->playback_format;
 	deviceConfig.playback.channels = config->playback_channels;
-	deviceConfig.sampleRate = config->sample_rate; // Set the sample rate
+	// deviceConfig.sampleRate = config->sample_rate; // Set the sample rate
 	deviceConfig.pUserData = g_audio_data; // Pass the audio data to the callback
-	deviceConfig.dataCallback = ma_callback;
+	if (config->source_type == AUDIO_SOURCE_TYPE_FILE) {
+		deviceConfig.dataCallback = ma_callback_file; // Use the file callback for file input
+	} else {
+		deviceConfig.dataCallback = ma_callback_inline; // Use the inline callback for inline input
+	}
 	ma_result result;
 	result = ma_device_init(&g_audio_context, &deviceConfig, &g_audio_device);
 	if (result != MA_SUCCESS) {
@@ -266,6 +321,11 @@ void close_audio() {
 	ma_device_stop(&g_audio_device);
 	ma_device_uninit(&g_audio_device);
 	ma_pcm_rb_uninit(&g_audio_data->rb);
+	if (g_audio_data->decoder != NULL) {
+		ma_decoder_uninit(g_audio_data->decoder);
+		free(g_audio_data->decoder);
+		g_audio_data->decoder = NULL;
+	}
 	free(g_audio_data);
 	g_audio_data = NULL;
 	_is_audio_initialized = 0; // Reset the flag to indicate that audio is closed

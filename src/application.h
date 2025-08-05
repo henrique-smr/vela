@@ -7,7 +7,7 @@
 typedef struct {
 	int is_running;
 	int show_menu;
-
+	int fullscreen; // Flag to indicate if the application is in fullscreen mode
 } Application;
 
 Application* init_application() {
@@ -18,6 +18,7 @@ Application* init_application() {
 	}
 	app->is_running = 1;
 	app->show_menu = 0;
+	app->fullscreen = 1; // Initialize fullscreen to true
 
 	return app;
 }
