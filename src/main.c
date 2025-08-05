@@ -1,7 +1,8 @@
 //----------------------------------------------------------------------------------
 // Audio Visualizer
 //----------------------------------------------------------------------------------
-
+#define GLSL_VERSION            330
+#define PLATFORM_DESKTOP
 #define SAMPLE_TYPE ma_int32
 
 #include "application.h"
@@ -102,30 +103,42 @@ int main(int argc, char **argv) {
 	//--------------------------------------------------------------------------------------
 	// Graphics Initialization
 	//--------------------------------------------------------------------------------------
-	int display = GetCurrentMonitor();
-	const int screenWidth = GetMonitorWidth(display);
-	const int screenHeight = GetMonitorHeight(display);
 
-	InitWindow(screenWidth, screenHeight, "Vizualizer");
+	InitWindow(0, 0, "Vizualizer");
+
+	int display = GetCurrentMonitor();
+	int screenWidth = GetMonitorWidth(display);
+	int screenHeight = GetMonitorHeight(display);
+	int resolution[2] = {screenWidth, screenHeight};
+	SetWindowSize(screenWidth, screenHeight);
 	SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 	GuiLoadStyleDark(); // Load dark style for raygui
 	ToggleFullscreen();
 
-	Image imBlank = GenImageColor(1024, 1024, BLANK);
+	Image imBlank = GenImageColor(screenWidth, screenHeight, BLANK);
 
 	Texture2D texture = LoadTextureFromImage(imBlank); // Load blank texture to fill on shader
 	UnloadImage(imBlank);
 
 	// NOTE: Using GLSL 330 shader version
-	Shader shader = LoadShader(0, TextFormat("resources/shaders/cubes.fs.glsl"));
+	Shader shader = LoadShader(0, "resources/shaders/cubes.fs.glsl");
 
-	// float time = 0.0f;
-	// int timeLoc = GetShaderLocation(shader, "u_time");
-	// float signalLoc = GetShaderLocation(shader, "u_signal");
-	// SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
-	// SetShaderValue(shader, signalLoc, &g_audio_norm_avg[0],
-	// SHADER_UNIFORM_FLOAT); SetShaderValue(shader, GetShaderLocation(shader,
-	// "u_resolution"), &resolution, SHADER_UNIFORM_VEC2);
+	float time = 0.0f;
+	int timeLoc = GetShaderLocation(shader, "u_time");
+	float signalLoc = GetShaderLocation(shader, "u_signal");
+	SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+	SetShaderValue(
+		shader,
+		signalLoc,
+		&g_audio_analysis->norm_avg[0],
+		SHADER_UNIFORM_FLOAT
+	); 
+	SetShaderValue(
+		shader,
+		GetShaderLocation(shader, "u_resolution"),
+		&resolution,
+		SHADER_UNIFORM_VEC2
+	);
 
 	// AudioData *g_audio_data = get_audio_data();
 
@@ -136,14 +149,13 @@ int main(int argc, char **argv) {
 	// Main game loop
 	while (!WindowShouldClose()) // Detect window close button or ESC key
 	{
-	SetExitKey(KEY_NULL);
+		SetExitKey(KEY_NULL);
 		if (app->is_running) {
 			// Update
 			//----------------------------------------------------------------------------------
-			// time = (float)GetTime();
-			// SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
-			// SetShaderValue(shader, signalLoc, &g_audio_norm_avg[0],
-			// SHADER_UNIFORM_FLOAT);
+			time = (float)GetTime();
+			SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+			SetShaderValue(shader, signalLoc,&g_audio_analysis->norm_avg[0], SHADER_UNIFORM_FLOAT);
 			//----------------------------------------------------------------------------------
 			// check for alt + enter
 			if (IsKeyPressed(KEY_ENTER) && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
@@ -163,19 +175,25 @@ int main(int argc, char **argv) {
 			BeginDrawing();
 
 			// ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR))); 
-			ClearBackground(background);
-			render_audio_analysis(g_audio_analysis);
+			ClearBackground(BLACK); // Clear background with white color
+			// render_audio_analysis(g_audio_analysis);
 
+
+			// raygui: controls drawing
+			//----------------------------------------------------------------------------------
+			BeginShaderMode(shader);    // Enable our custom shader for next
+			// shapes/textures drawings 
+				DrawTextureRec(
+					texture,
+					(Rectangle) {0,0,screenWidth, -screenHeight},
+					(Vector2){0,},
+					WHITE
+				);  // Drawing BLANK texture, all magic happens on shader
+			EndShaderMode();            //
+			// Disable our custom shader, return to default shader
 			if(app->show_menu) {
 				GuiAudioConfig(&state, &audio_config, app);
 			}
-			// raygui: controls drawing
-			//----------------------------------------------------------------------------------
-			// BeginShaderMode(shader);    // Enable our custom shader for next
-			// shapes/textures drawings DrawTexture(texture, 0, 0, WHITE);  // Drawing
-			// BLANK texture, all magic happens on shader EndShaderMode();            //
-			// Disable our custom shader, return to default shader
-
 			EndDrawing();
 
 
@@ -198,6 +216,76 @@ int main(int argc, char **argv) {
 	uinit_application(app); // Free application resources
 	//--------------------------------------------------------------------------------------
 
+
+	return 0;
+}
+
+int main_bak(void)
+{
+	// Initialization
+	//--------------------------------------------------------------------------------------
+	const int screenWidth = 800;
+	const int screenHeight = 450;
+
+	InitWindow(screenWidth, screenHeight, "raylib [shaders] example - texture drawing");
+
+	Image imBlank = GenImageColor(screenWidth, screenHeight, BLANK);
+	Texture2D texture = LoadTextureFromImage(imBlank);  // Load blank texture to fill on shader
+	UnloadImage(imBlank);
+
+	// NOTE: Using GLSL 330 shader version, on OpenGL ES 2.0 use GLSL 100 shader version
+	Shader shader = LoadShader(0, "resources/shaders/cubes.fs.glsl");
+
+	float time = 0.0f;
+	int timeLoc = GetShaderLocation(shader, "u_time");
+	SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+	SetShaderValue(
+		shader,
+		GetShaderLocation(shader, "u_resolution"),
+		&(int[2]){screenWidth, screenHeight},
+		SHADER_UNIFORM_VEC2
+	);
+
+	SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
+	// -------------------------------------------------------------------------------------------------------------
+
+	// Main game loop
+	while (!WindowShouldClose())    // Detect window close button or ESC key
+	{
+		// Update
+		//----------------------------------------------------------------------------------
+		time = (float)GetTime();
+		SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+		//----------------------------------------------------------------------------------
+
+		// Draw
+		//----------------------------------------------------------------------------------
+		BeginDrawing();
+
+			ClearBackground(RAYWHITE);
+
+			BeginShaderMode(shader);    // Enable our custom shader for next shapes/textures drawings
+				DrawTextureRec(
+					texture,
+					(Rectangle) {0,0,screenWidth, -screenHeight},
+					(Vector2){0,},
+					WHITE
+				);  // Drawing BLANK texture, all magic happens on shader
+			EndShaderMode();            // Disable our custom shader, return to default shader
+
+			DrawText("BACKGROUND is PAINTED and ANIMATED on SHADER!", 10, 10, 20, MAROON);
+
+		EndDrawing();
+		//----------------------------------------------------------------------------------
+	}
+
+	// De-Initialization
+	//--------------------------------------------------------------------------------------
+	UnloadShader(shader);
+	UnloadTexture(texture);
+
+	CloseWindow();        // Close window and OpenGL context
+	//--------------------------------------------------------------------------------------
 
 	return 0;
 }
