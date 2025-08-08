@@ -112,7 +112,7 @@ void *fft_loop(void *arg) {
 					if (j == 0) {
 						g_audio_analysis->freq_data[i][j] = 0; // Store FFT output
 					} else {
-						g_audio_analysis->freq_data[i][j] = log1p(ssample*j); // remove pink noise
+						g_audio_analysis->freq_data[i][j] = log1p(ssample*j); // Store FFT output with exponential scaling
 					}
 				}
 				float sum = 0.0f;
@@ -121,6 +121,8 @@ void *fft_loop(void *arg) {
 				}
 				g_audio_analysis->norm_avg[i] = sum / buffer->size; // Calculate average for this channel
 			}
+			buffer->frames_count = 0; // Reset the frames count after processing
+			buffer->frames_cursor = 0; // Reset the cursor after processing
 		}
 	}
 	// After processing, we can stop the FFT thread

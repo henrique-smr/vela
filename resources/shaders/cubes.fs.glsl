@@ -55,7 +55,7 @@ void main() {
     // Draw lines
     pattern = lines(pos,.5);
 
-	float signal = u_signal*0.0000001;
+	float signal = u_signal*1;
 	float time = u_time*0.01;
 
 	vec3 color = vec3(noise(pos + vec2(time, signal)));
@@ -69,7 +69,7 @@ void main() {
 	 color *= pattern;
 
 	 // Final color
-	finalColor = vec4(color.x, color.x*color.y, color.y, 1.0);
+	finalColor = vec4(color.x, color.x*color.y, color.y, signal+0.8);
 
     // finalColor = vec4(vec3(pattern,,1.0);
 }
