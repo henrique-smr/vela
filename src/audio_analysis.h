@@ -119,7 +119,7 @@ void *fft_loop(void *arg) {
 					if (j == 0) {
 						g_audio_analysis->freq_data[i][j] = 0; // Store FFT output
 					} else {
-						g_audio_analysis->freq_data[i][j] = log1p(ssample*j); // Store FFT output with exponential scaling
+						g_audio_analysis->freq_data[i][j] = ssample;//log1p(ssample*j); // Store FFT output with exponential scaling
 					}
 				}
 				float sum = 0.0f;
