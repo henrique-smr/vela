@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include "audio.h"
+#define MA_TYPE double
+#include "moving_average.h"
 
 #ifndef SAMPLE_TYPE
 #define SAMPLE_TYPE ma_int32
@@ -31,6 +33,7 @@ typedef struct {
 	double *fft_out;    // Output for FFT
 	fftw_plan fft_plan; // FFT plan
 	AudioBuffer buffer; // Buffer to hold audio data for analysis, will be larger
+	MovingAverageND *moving_average; // Moving average for smoothing the data
 	double **freq_data; // Frequency domain data for each channel
 	double **time_data; // Time domain data for each channel
 	float *norm_avg;    // Average normalized value for each channel
@@ -80,6 +83,7 @@ void *fft_loop(void *arg) {
 			continue;
 		}
 
+		// float *result = malloc(sizeof(float) * buffer->size);
 		// fill the buffer with the acquired frames
 		for (ma_uint32 i = 0; i < buffer->channels; i++) {
 			ma_uint32 buffer_frames_cursor;
@@ -97,8 +101,11 @@ void *fft_loop(void *arg) {
 				// Update the cursor for the next frame
 			}
 		}
+
+		free(raw_data); // Free the raw data after copying to the buffer
 		buffer->frames_cursor = (buffer->frames_cursor + sizeInFrames) % buffer->size; // Update the cursor for the next read
 
+		//
 		if (buffer->frames_count >= buffer->size) {
 			for (ma_uint32 i = 0; i < buffer->channels; i++) {
 				for (ma_uint32 j = 0; j < buffer->size; j++) {
@@ -108,7 +115,7 @@ void *fft_loop(void *arg) {
 				fftw_execute(g_audio_analysis->fft_plan); // Execute FFT for this channel
 
 				for (ma_uint32 j = 0; j < buffer->size; j++) {
-					double ssample = fabs(g_audio_analysis->fft_out[j]) / buffer->size; // Normalize the FFT output
+					double ssample = fabs(g_audio_analysis->fft_out[j]) / (buffer->size); // Normalize the FFT output
 					if (j == 0) {
 						g_audio_analysis->freq_data[i][j] = 0; // Store FFT output
 					} else {
@@ -123,6 +130,7 @@ void *fft_loop(void *arg) {
 			}
 			buffer->frames_count = 0; // Reset the frames count after processing
 			buffer->frames_cursor = 0; // Reset the cursor after processing
+			calculate_moving_average_nd(g_audio_analysis->moving_average, g_audio_analysis->freq_data[0], g_audio_analysis->freq_data[0]);
 		}
 	}
 	// After processing, we can stop the FFT thread
@@ -170,6 +178,9 @@ int start_analysis(AudioAnalysisConfig *config) {
 		FFTW_REDFT10,
 		FFTW_ESTIMATE
 	);
+
+	g_audio_analysis->moving_average = init_moving_average_nd(config->buffer_size);
+
 	_is_analysis_running = 1; // Set the flag to indicate that the FFT thread should run
 	pthread_create(&fft_thread, NULL, fft_loop, config);
 

@@ -117,18 +117,33 @@ void ma_callback_file(ma_device *pDevice, void *pOutput, const void *pInput, ma_
 	AudioData *audio_data = (AudioData *)pDevice->pUserData;
 
 	void *pBuffer;
-	ma_uint32 sizeInFrames = frameCount;
-	ma_result result = ma_pcm_rb_acquire_write(&audio_data->rb, &sizeInFrames, &pBuffer);
+	void *pOutputBuffer = malloc(frameCount * ma_get_bytes_per_frame(audio_data->rb.format, audio_data->rb.channels));
+	ma_uint32 availableFrames = frameCount;
+	ma_result result = ma_pcm_rb_acquire_write(&audio_data->rb, &availableFrames, &pBuffer);
 	if (result != MA_SUCCESS) {
 		printf("Failed to acquire write buffer: %s\n", ma_result_description(result));
 		return;
 	}
-
+	ma_uint64 framesRead = 0;
 	// Read PCM frames from the decoder
-	ma_decoder_read_pcm_frames(audio_data->decoder, pBuffer, sizeInFrames, NULL);
-	ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
+	result = ma_decoder_read_pcm_frames(audio_data->decoder, pOutputBuffer, frameCount, &framesRead);
+	if (result != MA_SUCCESS) {
+		printf("Failed to read PCM frames: %s\n", ma_result_description(result));
+		ma_pcm_rb_commit_write(&audio_data->rb, 0); // Commit with 0 frames if read fails
+		return;
+	}
+
+	ma_copy_pcm_frames(pBuffer, pOutputBuffer, availableFrames>framesRead?framesRead:availableFrames, audio_data->rb.format, audio_data->rb.channels);
+
+	result = ma_pcm_rb_commit_write(&audio_data->rb, availableFrames>framesRead?framesRead:availableFrames);
+	if (result != MA_SUCCESS) {
+		printf("Failed to commit write buffer: %s\n", ma_result_description(result));
+		return;
+	}
 	// Copy the output data to the output buffer
-	MA_COPY_MEMORY(pOutput, pBuffer, frameCount * ma_get_bytes_per_frame(pDevice->playback.format, pDevice->playback.channels));
+	// ma_copy_and_apply_volume_factor_pcm_frames(void *pFramesOut, const void *pFramesIn, ma_uint64 frameCount, ma_format format, ma_uint32 channels, float factor)
+	ma_copy_pcm_frames(pOutput, pOutputBuffer, framesRead, audio_data->rb.format, audio_data->rb.channels);
+	// MA_COPY_MEMORY(pOutput, pBuffer, frameCount * ma_get_bytes_per_frame(pDevice->playback.format, pDevice->playback.channels));
 }
 
 void ma_callback_inline(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount) {
@@ -143,12 +158,17 @@ void ma_callback_inline(ma_device *pDevice, void *pOutput, const void *pInput, m
 		printf("Failed to acquire write buffer: %s\n", ma_result_description(result));
 		return;
 	}
+
 	// Copy the input samples to the ring buffer
 	ma_uint32 bytesPerFrame = ma_get_bytes_per_frame(pDevice->capture.format, pDevice->capture.channels);
 	ma_uint32 bytesToWrite = sizeInFrames * bytesPerFrame;
 	MA_COPY_MEMORY(pBuffer, pInput, bytesToWrite);
 	MA_COPY_MEMORY(pOutput, pInput, frameCount * ma_get_bytes_per_frame(pDevice->capture.format, pDevice->capture.channels));
-	ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
+	result = ma_pcm_rb_commit_write(&audio_data->rb, sizeInFrames);
+	if (result != MA_SUCCESS) {
+		printf("Failed to commit write buffer: %s\n", ma_result_description(result));
+		return;
+	}
 
 }
 
@@ -190,6 +210,8 @@ AudioData *_init_audio_data(AudioConfig *config) {
 		config->sample_rate = audio_data->decoder->outputSampleRate; // Set the sample rate from the decoder
 		config->playback_format = audio_data->decoder->outputFormat; // Set the playback format from the decoder
 		config->playback_channels = audio_data->decoder->outputChannels; // Set the playback channels from the decoder
+		config->capture_format = audio_data->decoder->outputFormat; // Set the capture format from the decoder
+		config->capture_channels = audio_data->decoder->outputChannels; // Set the capture channels from the decoder
 
 	} else {
 		audio_data->decoder = NULL; // No decoder for inline input

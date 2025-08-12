@@ -24,7 +24,7 @@ void render_audio_analysis(AudioAnalysis *analysis) {
   int rw = GetRenderWidth();
   int rh = GetRenderHeight();
   int fcount = analysis->buffer.size;
-  int accumulation = 10; // How many frames to accumulate for visualization
+  int accumulation = 1; // How many frames to accumulate for visualization
   int bin_count = floor(fcount / (float)accumulation);
 
   double *time_data =
@@ -33,10 +33,13 @@ void render_audio_analysis(AudioAnalysis *analysis) {
       analysis->freq_data[0]; // Use the first channel for frequency bins
   //
   // acumulate freq_data in
-  double *freq_bins = (double *)malloc(sizeof(double) * bin_count);
+  double *freq_bins = (double *)calloc(bin_count, sizeof(double));
   for (int i = 0; i < bin_count; i++) {
     for (int j = 0; j < accumulation; j++) {
-      freq_bins[i] += freq_data[(i * 4 + j) % fcount];
+		if ((i * accumulation + j) >= fcount) {
+		  break; // Prevent out of bounds access
+		}
+      freq_bins[i] += freq_data[(i * accumulation + j) % fcount];
     }
     freq_bins[i] = freq_bins[i] / accumulation;
   }
@@ -46,17 +49,17 @@ void render_audio_analysis(AudioAnalysis *analysis) {
   // printf("rw: %d, rh: %d, fcount: %d, bin_count: %d, w: %f\n", rw, rh,
   // fcount, bin_count, w);
 
-  for (int i = 0; i < fcount; i++) {
-    float td = (float)time_data[i];
-    int td_h = (int)(((float)rh / 2) * td);
-
-    if (td > 0) {
-      DrawRectangle(i * w, rh - td_h, w, td_h / 5 + 1, foreground);
-    } else if (td < 0) {
-      td_h = -td_h;
-      DrawRectangle(i * w, rh, w, td_h / 5 + 1, foreground);
-    }
-  }
+  // for (int i = 0; i < fcount; i++) {
+  //   float td = (float)time_data[i];
+  //   int td_h = (int)(((float)rh / 2) * td);
+  //
+  //   if (td > 0) {
+  //     DrawRectangle(i * w, rh - td_h, w, td_h / 5 + 1, foreground);
+  //   } else if (td < 0) {
+  //     td_h = -td_h;
+  //     DrawRectangle(i * w, rh, w, td_h / 5 + 1, foreground);
+  //   }
+  // }
   w = ceil((((float)rw) / (float)bin_count));
   // printf("bin_count: %d, rw: %d, rh: %d, h: %f\n", bin_count, rw, rh, w);
   for (int i = 0; i < bin_count; i++) {
@@ -182,7 +185,7 @@ int main(int argc, char **argv) {
 
 	parse_args(argc, argv, &audio_config, app);
 
-	audio_config.buffer_size = screenWidth;
+	audio_config.buffer_size = screenWidth*2;
 
 	init_audio(&audio_config);
 	start_analysis(&(AudioAnalysisConfig){
@@ -235,6 +238,7 @@ int main(int argc, char **argv) {
 			// Update
 			//----------------------------------------------------------------------------------
 			time = (float)GetTime();
+			float dt = GetFrameTime();
 			//----------------------------------------------------------------------------------
 			// check for alt + enter
 			if (IsKeyPressed(KEY_ENTER) &&
@@ -249,8 +253,8 @@ int main(int argc, char **argv) {
 					app->show_menu = true;
 				}
 			}
-			UpdateWaveformTexture(&audio_channel_0, g_audio_analysis->freq_data[0], g_audio_analysis->buffer.size);
-			UpdateWaveformTexture(&audio_channel_1, g_audio_analysis->freq_data[1], g_audio_analysis->buffer.size);
+			UpdateWaveformTexture(&audio_channel_0, g_audio_analysis->time_data[0], g_audio_analysis->buffer.size);
+			UpdateWaveformTexture(&audio_channel_1, g_audio_analysis->time_data[1], g_audio_analysis->buffer.size);
 			UpdateWaveformTexture(&spectrum_channel_0, g_audio_analysis->freq_data[0], g_audio_analysis->buffer.size);
 			UpdateWaveformTexture(&spectrum_channel_1, g_audio_analysis->freq_data[1], g_audio_analysis->buffer.size);
 			// Draw
@@ -259,25 +263,25 @@ int main(int argc, char **argv) {
 
 				// ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 				ClearBackground(BLACK);
-				// render_audio_analysis(g_audio_analysis);
+				render_audio_analysis(g_audio_analysis);
 
 				// raygui: controls drawing
 				//----------------------------------------------------------------------------------
-				BeginShaderMode(shader);
-					SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
-					SetShaderValue(shader, signalLoc, &g_audio_analysis->norm_avg[0], SHADER_UNIFORM_FLOAT);
-					SetShaderValue(shader, resolutionLoc, &resolution, SHADER_UNIFORM_VEC2);
-					SetShaderValueTexture(shader, audio_channel_0_loc, audio_channel_0);
-					SetShaderValueTexture(shader, audio_channel_1_loc, audio_channel_1);
-					SetShaderValueTexture(shader, spectrum_channel_0_loc, spectrum_channel_0);
-					SetShaderValueTexture(shader, spectrum_channel_1_loc, spectrum_channel_1);
-					DrawTextureRec(
-						texture, (Rectangle){0, 0, screenWidth, -screenHeight},
-						(Vector2){
-							0,
-						},
-						WHITE);
-				EndShaderMode(); //
+				// BeginShaderMode(shader);
+				// 	SetShaderValue(shader, timeLoc, &time, SHADER_UNIFORM_FLOAT);
+				// 	SetShaderValue(shader, signalLoc, &g_audio_analysis->norm_avg[0], SHADER_UNIFORM_FLOAT);
+				// 	SetShaderValue(shader, resolutionLoc, &resolution, SHADER_UNIFORM_VEC2);
+				// 	SetShaderValueTexture(shader, audio_channel_0_loc, audio_channel_0);
+				// 	SetShaderValueTexture(shader, audio_channel_1_loc, audio_channel_1);
+				// 	SetShaderValueTexture(shader, spectrum_channel_0_loc, spectrum_channel_0);
+				// 	SetShaderValueTexture(shader, spectrum_channel_1_loc, spectrum_channel_1);
+				// 	DrawTextureRec(
+				// 		texture, (Rectangle){0, 0, screenWidth, -screenHeight},
+				// 		(Vector2){
+				// 			0,
+				// 		},
+				// 		WHITE);
+				// EndShaderMode(); //
 				if (app->show_menu) {
 					GuiAudioConfig(&state, &audio_config, app);
 				}
