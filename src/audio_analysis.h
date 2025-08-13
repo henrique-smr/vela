@@ -33,9 +33,10 @@ typedef struct {
 	double *fft_out;    // Output for FFT
 	fftw_plan fft_plan; // FFT plan
 	AudioBuffer buffer; // Buffer to hold audio data for analysis, will be larger
-	MovingAverageND *moving_average; // Moving average for smoothing the data
+	MovingAverageND **ma_freq; // Moving average for smoothing the data
 	double **freq_data; // Frequency domain data for each channel
 	double **time_data; // Time domain data for each channel
+	double **pitch; // Pitch data for each channel, can be used for further analysis
 	float *norm_avg;    // Average normalized value for each channel
 } AudioAnalysis;
 
@@ -122,7 +123,28 @@ void *fft_loop(void *arg) {
 						g_audio_analysis->freq_data[i][j] = ssample;//log1p(ssample*j); // Store FFT output with exponential scaling
 					}
 				}
-				float sum = 0.0f;
+				// Update the moving average for frequency data
+				calculate_moving_average_nd(g_audio_analysis->ma_freq[i], g_audio_analysis->freq_data[i], g_audio_analysis->freq_data[i]);
+				// Calculate the pitch for this channel
+				int log_fcount = ceil(log2(buffer->size));
+				int num_bins = 125; // Number of bins for pitch calculation, can be adjusted based on requirements
+				for (int j = 0; j < num_bins; j++) {
+					int bin_start = floor(pow(2, j*(log_fcount/(float)num_bins)) - 1);
+					//quando chegar no ultimo bin, garantir que bin_end=buffer_size
+					int bin_end = ceil(pow(2, (j + 1)*(log_fcount/(float)num_bins)));
+					if (bin_end > buffer->size) {
+						bin_end = buffer->size;
+					}
+
+					double sum = 0.0;
+					for (int k = bin_start; k < bin_end; k++) {
+						sum += g_audio_analysis->freq_data[i][k];
+					}
+					g_audio_analysis->pitch[i][j] = log2(sum / (bin_end - bin_start) + 1);
+				}
+
+
+				double sum = 0.0f;
 				for (ma_uint32 j = 0; j < buffer->size; j++) {
 					sum += g_audio_analysis->fft_in[j];
 				}
@@ -130,7 +152,7 @@ void *fft_loop(void *arg) {
 			}
 			buffer->frames_count = 0; // Reset the frames count after processing
 			buffer->frames_cursor = 0; // Reset the cursor after processing
-			calculate_moving_average_nd(g_audio_analysis->moving_average, g_audio_analysis->freq_data[0], g_audio_analysis->freq_data[0]);
+
 		}
 	}
 	// After processing, we can stop the FFT thread
@@ -179,7 +201,15 @@ int start_analysis(AudioAnalysisConfig *config) {
 		FFTW_ESTIMATE
 	);
 
-	g_audio_analysis->moving_average = init_moving_average_nd(config->buffer_size);
+	g_audio_analysis->ma_freq = malloc(sizeof(MovingAverageND *) * config->channels);
+	for (size_t i = 0; i < config->channels; i++) {
+		g_audio_analysis->ma_freq[i] = init_moving_average_nd(config->buffer_size);
+	}
+
+	g_audio_analysis->pitch = malloc(sizeof(double *) * config->channels);
+	for (size_t i = 0; i < config->channels; i++) {
+		g_audio_analysis->pitch[i] = calloc(config->buffer_size, sizeof(double));
+	}
 
 	_is_analysis_running = 1; // Set the flag to indicate that the FFT thread should run
 	pthread_create(&fft_thread, NULL, fft_loop, config);
@@ -223,6 +253,11 @@ void close_analysis() {
 	fftw_destroy_plan(g_audio_analysis->fft_plan);
 	fftw_cleanup();
 
+	// uninit moving averages
+	for (size_t i = 0; i < g_audio_analysis->buffer.channels; i++) {
+		free_moving_average_nd(g_audio_analysis->ma_freq[i]);
+	}
+	free(g_audio_analysis->ma_freq);
 	// Free analysis
 	for (size_t i = 0; i < g_audio_analysis->buffer.channels; i++) {
 		free(g_audio_analysis->buffer.frames[i]);
@@ -237,6 +272,11 @@ void close_analysis() {
 		free(g_audio_analysis->time_data[i]);
 	}
 	free(g_audio_analysis->time_data);
+
+	for (size_t i = 0; i < g_audio_analysis->buffer.channels; i++) {
+		free(g_audio_analysis->pitch[i]);
+	}
+	free(g_audio_analysis->pitch);
 
 	free(g_audio_analysis->norm_avg);
 	free(g_audio_analysis);

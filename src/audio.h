@@ -143,6 +143,7 @@ void ma_callback_file(ma_device *pDevice, void *pOutput, const void *pInput, ma_
 	// Copy the output data to the output buffer
 	// ma_copy_and_apply_volume_factor_pcm_frames(void *pFramesOut, const void *pFramesIn, ma_uint64 frameCount, ma_format format, ma_uint32 channels, float factor)
 	ma_copy_pcm_frames(pOutput, pOutputBuffer, framesRead, audio_data->rb.format, audio_data->rb.channels);
+	free(pOutputBuffer);
 	// MA_COPY_MEMORY(pOutput, pBuffer, frameCount * ma_get_bytes_per_frame(pDevice->playback.format, pDevice->playback.channels));
 }
 

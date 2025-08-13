@@ -47,38 +47,38 @@ void render_analysis_freq_data(AudioAnalysis *analysis) {
 	// This function can be used to render the frequency domain data
 	int rw = GetRenderWidth();
 	int rh = GetRenderHeight();
-	int fcount = analysis->buffer.size;
+	int fcount = 125;
 
-	double *freq_data = analysis->freq_data[0]; // Use the first channel for visualization
+	double *pitch = analysis->pitch[0]; // Use the first channel for visualization
 
 	//vamos agrupar as frequencias em bins logaritmicos
-	int log_fcount = ceil(log2(fcount));
-	int num_bins = 100;
-	float w = ceil(((float)rw) / (float)num_bins);
-	double *pitch = calloc(num_bins, sizeof(double));
+	// int log_fcount = ceil(log2(fcount));
+	// int num_bins = 100;
+	float w = ceil(((float)rw) / (float)fcount);
+	// double *pitch = calloc(num_bins, sizeof(double));
 
 	// Calculate the pitch for each frequency bin
-	for (int i = 0; i < num_bins; i++) {
-		int bin_start = floor(pow(2, i*(log_fcount/(float)num_bins)) - 1);
-		//quando chegar no ultimo bin, garantir que bin_end=fcount
-		int bin_end = ceil(pow(2, (i + 1)*(log_fcount/(float)num_bins)));
-		if (bin_end > fcount) {
-			bin_end = fcount;
-		}
-
-		double sum = 0.0;
-		for (int j = bin_start; j < bin_end; j++) {
-			// printf("j: %d, freq_data[j]: %f\n", j, freq_data[j]);
-			sum += freq_data[j];
-		}
-		pitch[i] = sum / (bin_end - bin_start);
-		// printf("bin %d: start: %d, end: %d, pitch: %f\n", i, bin_start, bin_end, pitch[i]);
-	}
+	// for (int i = 0; i < num_bins; i++) {
+	// 	int bin_start = floor(pow(2, i*(log_fcount/(float)num_bins)) - 1);
+	// 	//quando chegar no ultimo bin, garantir que bin_end=fcount
+	// 	int bin_end = ceil(pow(2, (i + 1)*(log_fcount/(float)num_bins)));
+	// 	if (bin_end > fcount) {
+	// 		bin_end = fcount;
+	// 	}
+	//
+	// 	double sum = 0.0;
+	// 	for (int j = bin_start; j < bin_end; j++) {
+	// 		// printf("j: %d, freq_data[j]: %f\n", j, freq_data[j]);
+	// 		sum += freq_data[j];
+	// 	}
+	// 	pitch[i] = sum / (bin_end - bin_start);
+	// 	// printf("bin %d: start: %d, end: %d, pitch: %f\n", i, bin_start, bin_end, pitch[i]);
+	// }
 
 	// Render the frequency data as bars
 
-	for (int i = 0; i < num_bins; i++) {
-		double fd = log2(pitch[i] + 1)*i;
+	for (int i = 0; i < fcount; i++) {
+		double fd = pitch[i]*50;
 		int fd_h = (int)(((float)rh / 2) * fd);
 		if (fd > 0) {
 			DrawRectangle(i * w, rh - (fd_h / 5 + 1), w, fd_h / 5 + 1,
@@ -87,6 +87,11 @@ void render_analysis_freq_data(AudioAnalysis *analysis) {
 			fd_h = -fd_h;
 			DrawRectangle(i * w, rh - (fd_h / 5 + 1), w, fd_h / 5 + 1,
 					  CLITERAL(Color){0x00, 0xff, 0x00, 0xff});
+		}
+		//render a line with ticks for the frequency data
+		if (i % 1 == 0) {
+			DrawLine(i * w, rh - (fd_h / 5 + 1), i * w, rh, CLITERAL(Color){0x00, 0xff, 0x00, 0xff});
+			DrawText(TextFormat("%d", i), i * w + 2, rh - (fd_h / 5 + 1) - 10, 10, CLITERAL(Color){0x00, 0xff, 0x00, 0xff});
 		}
 	}
 }
@@ -277,8 +282,8 @@ int main(int argc, char **argv) {
 
 	Texture audio_channel_0 	= CreateWaveformTexture( g_audio_analysis->time_data[0], g_audio_analysis->buffer.size);
 	Texture audio_channel_1 	= CreateWaveformTexture( g_audio_analysis->time_data[1], g_audio_analysis->buffer.size);
-	Texture spectrum_channel_0 = CreateWaveformTexture( g_audio_analysis->freq_data[0], g_audio_analysis->buffer.size);
-	Texture spectrum_channel_1 = CreateWaveformTexture( g_audio_analysis->freq_data[1], g_audio_analysis->buffer.size);
+	Texture spectrum_channel_0 = CreateWaveformTexture( g_audio_analysis->pitch[0], 125);
+	Texture spectrum_channel_1 = CreateWaveformTexture( g_audio_analysis->pitch[1], 125);
 	Shader shader = LoadShader(0, "resources/shaders/ray.fs.glsl");
 
 	float time = 0.0f;
@@ -327,8 +332,8 @@ int main(int argc, char **argv) {
 			}
 			UpdateWaveformTexture(&audio_channel_0, g_audio_analysis->time_data[0], g_audio_analysis->buffer.size);
 			UpdateWaveformTexture(&audio_channel_1, g_audio_analysis->time_data[1], g_audio_analysis->buffer.size);
-			UpdateWaveformTexture(&spectrum_channel_0, g_audio_analysis->freq_data[0], g_audio_analysis->buffer.size);
-			UpdateWaveformTexture(&spectrum_channel_1, g_audio_analysis->freq_data[1], g_audio_analysis->buffer.size);
+			UpdateWaveformTexture(&spectrum_channel_0, g_audio_analysis->pitch[0], 125);
+			UpdateWaveformTexture(&spectrum_channel_1, g_audio_analysis->pitch[1], 125);
 			// Draw
 			//----------------------------------------------------------------------------------
 			BeginDrawing();

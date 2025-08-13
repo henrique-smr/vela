@@ -67,32 +67,23 @@ float noise2D(vec2 st) {
                      dot( random2D(i + vec2(1.0,1.0) ), f - vec2(1.0,1.0) ), u.x), u.y);
 }
 vec3 palette( in float t ) {
-	float bassFreq = pow(avgFreq(0.0, 0.1, 0.01), 0.85);
-	float medFreq = pow(avgFreq(0.10, 0.6, 0.01), 0.85);
-	float topFreq = pow(avgFreq(0.6, 1.0, 0.01), 0.85);
+	float bassFreq = avgFreq(0.0, 0.4, 0.01);
+	float medFreq = avgFreq(0.4, 0.6, 0.01);
+	float topFreq = avgFreq(0.6, 1.0, 0.01);
 	// vec3 a = vec3(0.5, 0.5, 0.5);
 	// vec3 b = vec3(0.5, 0.5, 0.5);
 	// vec3 c = vec3(2.0, 1.0, 0.);
 	// vec3 d = vec3(0.50, 0.20, 0.25);
-	vec3 a = vec3(0.5, 0.5, 0.5);
-	vec3 b = vec3(0.5, 0.5, 0.5);
-	vec3 c = vec3(1.0, 1.0, 1.) + vec3(
-		// 0
-		bassFreq*2. ,
-		bassFreq *2.,
-		bassFreq *2.
-		// noise2D(vec2(u_time*0.5,bassFreq*2.)),
-		// noise2D(vec2(u_time*0.5,bassFreq *2.)),
-		// noise2D(vec2(u_time*0.5,bassFreq *2.))
-	);
-	vec3 d = vec3(0.00, 0.10, 0.20) + vec3(
-		0,
-		0,// bassFreq *.5,
-		0
-		// noise2D(vec2(u_time*0.5,topFreq*2.)),
-		// noise2D(vec2(u_time*0.5,topFreq *2.)),
-		// noise2D(vec2(u_time*0.5,topFreq *2.))
-	);
+	// vec3 a = vec3(0.5, 0.5, 0.5);
+	// vec3 b = vec3(0.5, 0.5, 0.5);
+	// vec3 c = vec3(1.0, 1.0, 1.);
+	// vec3 d = vec3(0.00, 0.10, 0.20) ;
+	vec3 a = vec3(0.548, 0.498, 0.460);
+	vec3 b = vec3(0.274, 0.307, 0.018);
+	vec3 c = vec3(1.745, 1.664, 3.982);
+	vec3 d = vec3(-0.583, -0.948, -0.615) ;
+	float f = fract(t); // time-based modulation
+	t = t + spectrum0(f+0.2)*2  + spectrum1(f+0.2)*2  ; // Mix two audio channels for color modulation
 	return a + b*cos( 6.283185*(c*t+d) );
 }
 
@@ -117,7 +108,7 @@ float sdOctahedron( vec3 p, float s) {
 float map(vec3 p) {
 	vec3 q = p;
 
-	q.z += u_time*1.;
+	q.z += u_time*0.5;
 	// q.x += noise1D(u_time); // random value for each ray
 	// q.y += noise2D(vec2(u_time,0.323618127693876123)); // random value for each ray
 	// q.x += fract(u_time*0.5);
@@ -129,19 +120,18 @@ float map(vec3 p) {
 
 	float f = fract(q.z);
 	vec3 c = vec3(0.,0.,0.);
-	float r =  audio0(f)*0.1;
-	// float r = 0.1; // radius of the octahedron
+	// float r =  audio0(f)*0.1;
+	float r = 0.1; // radius of the octahedron
 
-	// float sphereRadi = noise2D(vec2(u_time*0.1, 0.12342))*0.6 + 0.3; // Random radius for the sphere
-	float octaRadi = noise2D(vec2(u_time*0.1, .3432))*0.6 + 0.2; // Random radius for the octahedron
+	float sphereRadi = noise2D(vec2(u_time*0.1, 0.12342))*0.6 + 0.3; // Random radius for the sphere
+	// float octaRadi = noise2D(vec2(u_time*0.1, .3432))*0.6 + 0.2; // Random radius for the octahedron
 
-	// float sphere = sdSphere(q - c, sphereRadi + r);
 
 	q.yz = rot2D(u_time*.1) * q.yz; // Rotate the scene based on time
 
-
-	float oct = sdOctahedron(q, octaRadi + r); // Octahedron distance
-	return oct; // distance to a sphere of radius 1
+	float sphere = sdSphere(q - c, sphereRadi + r);
+	// float oct = sdOctahedron(q, octaRadi + r); // Octahedron distance
+	return sphere; // distance to a sphere of radius 1
 
 }
 
